@@ -5,10 +5,6 @@
 
 PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-PROXY_PORT="${PROXY_PORT:-10808}"
-EXTERNAL_LATENCY_WARN_MS="${EXTERNAL_LATENCY_WARN_MS:-3000}"
-GATEWAY_LATENCY_WARN_MS="${GATEWAY_LATENCY_WARN_MS:-80}"
-
 safe_run() {
   "$@" 2>/dev/null
 }
@@ -326,7 +322,7 @@ warp_bytes="- -"
 if [ "$active_tunnel_iface" != "-" ]; then
   warp_bytes="$(iface_bytes "$active_tunnel_iface")"
 fi
-proxy_port="$PROXY_PORT"
+proxy_port="10808"
 proxy_pid="$(safe_run lsof -nP -iTCP:${proxy_port} -sTCP:LISTEN | awk 'NR == 2 {print $2; exit}' | trim)"
 proxy_process="$(safe_run lsof -nP -iTCP:${proxy_port} -sTCP:LISTEN | awk 'NR == 2 {print $1; exit}' | trim)"
 if [ -z "$proxy_process" ]; then
@@ -494,12 +490,12 @@ gateway_latency_ms="$(latency_number "$gateway_latency")"
 exit_latency_ms="$(latency_number "$exit_latency")"
 external_slow="no"
 lan_slow="no"
-if is_number "$exit_latency_ms" && [ "$exit_latency_ms" -ge "$EXTERNAL_LATENCY_WARN_MS" ]; then
+if is_number "$exit_latency_ms" && [ "$exit_latency_ms" -ge 3000 ]; then
   external_slow="yes"
   health="WARN"
   problems+=("外网出口延迟偏高：$exit_latency")
 fi
-if is_number "$gateway_latency_ms" && [ "$gateway_latency_ms" -ge "$GATEWAY_LATENCY_WARN_MS" ]; then
+if is_number "$gateway_latency_ms" && [ "$gateway_latency_ms" -ge 80 ]; then
   lan_slow="yes"
   health="WARN"
   problems+=("内网网关延迟偏高：$gateway_latency")
@@ -507,11 +503,11 @@ fi
 
 if [ "$system_vpn_active" = "yes" ] && [ "$proxy_label" != "none" ]; then
   if [ "$active_tunnel_route_mode" = "全局默认路由" ]; then
-    status_line="🛡️🧦 全局VPN+代理"
+    status_line="🛡️🛰️ 全局VPN+代理"
   elif [ "$active_tunnel_route_mode" = "分流隧道" ]; then
-    status_line="🧩🧦 分流VPN+代理"
+    status_line="🧩🛰️ 分流VPN+代理"
   else
-    status_line="🔌🧦 VPN接口+代理"
+    status_line="🔌🛰️ VPN接口+代理"
   fi
 elif [ "$system_vpn_active" = "yes" ]; then
   if [ "$active_tunnel_route_mode" = "全局默认路由" ]; then
@@ -522,7 +518,7 @@ elif [ "$system_vpn_active" = "yes" ]; then
     status_line="🔌 VPN接口"
   fi
 elif [ "$proxy_label" != "none" ]; then
-  status_line="🧦 代理${PROXY_PORT}"
+  status_line="🛰️ 代理10808"
 else
   status_line="🏠 本地连接"
 fi
