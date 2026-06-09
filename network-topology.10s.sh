@@ -62,21 +62,6 @@ iface_bytes() {
   netstat -ibn 2>/dev/null | awk -v ifc="$ifc" '$1 == ifc && $3 ~ /^<Link/ {print $(NF-4), $(NF-1); exit}'
 }
 
-process_bytes() {
-  local proc="$1"
-  local out
-  if [ -z "$proc" ] || [ "$proc" = "-" ]; then
-    echo "- -"
-    return
-  fi
-  out="$(nettop -P -J bytes_in,bytes_out -x -l 1 2>/dev/null | awk -v proc="$proc" '{for (i = 1; i <= NF; i++) if ($i ~ ("^" proc "\\.")) {print $(NF-1), $NF; exit}}')"
-  if [ -n "$out" ]; then
-    echo "$out"
-  else
-    echo "- -"
-  fi
-}
-
 format_activity_rate() {
   local rate="$1"
   case "$rate" in
@@ -148,6 +133,55 @@ infer_proxy_app() {
   fi
 }
 
+expected_country_from_name() {
+  local name="$1"
+  local upper
+  local tokens
+  upper="$(echo "$name" | tr '[:lower:]' '[:upper:]')"
+  case "$upper" in
+    *香港*|*HONG*KONG*) echo "HK"; return ;;
+    *新加坡*|*SINGAPORE*) echo "SG"; return ;;
+    *日本*|*JAPAN*) echo "JP"; return ;;
+    *美国*|*UNITED*STATES*|*USA*) echo "US"; return ;;
+    *台湾*|*TAIWAN*) echo "TW"; return ;;
+    *韩国*|*KOREA*) echo "KR"; return ;;
+    *英国*|*UNITED*KINGDOM*) echo "GB"; return ;;
+    *德国*|*GERMANY*) echo "DE"; return ;;
+    *法国*|*FRANCE*) echo "FR"; return ;;
+    *加拿大*|*CANADA*) echo "CA"; return ;;
+    *澳大利亚*|*AUSTRALIA*) echo "AU"; return ;;
+    *荷兰*|*NETHERLANDS*) echo "NL"; return ;;
+  esac
+  tokens="$(echo "$upper" | sed 's/[^A-Z0-9]/ /g')"
+  for code in HK SG JP US TW KR GB UK DE FR CA AU NL; do
+    if echo " $tokens " | grep -q " $code "; then
+      if [ "$code" = "UK" ]; then
+        echo "GB"
+      else
+        echo "$code"
+      fi
+      return
+    fi
+  done
+  echo "-"
+}
+
+v2rayn_active_entry() {
+  local config="$HOME/Library/Application Support/v2rayN/guiConfigs/guiNConfig.json"
+  local db="$HOME/Library/Application Support/v2rayN/guiConfigs/guiNDB.db"
+  local index_id
+  if [ ! -f "$config" ] || [ ! -f "$db" ] || ! command -v sqlite3 >/dev/null 2>&1; then
+    echo "-|-|-"
+    return
+  fi
+  index_id="$(sed -n 's/.*"IndexId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$config" | head -n 1 | trim)"
+  if [ -z "$index_id" ]; then
+    echo "-|-|-"
+    return
+  fi
+  sqlite3 -separator '|' "$db" "select coalesce(Remarks,'-'), coalesce(Address,'-'), coalesce(Port,'-') from ProfileItem where IndexId='$index_id' limit 1;" 2>/dev/null
+}
+
 format_rate() {
   local bytes_per_sec="$1"
   if [ -z "$bytes_per_sec" ] || [ "$bytes_per_sec" = "-" ]; then
@@ -181,24 +215,73 @@ ping_latency() {
   ping -q -c 1 -W 1000 "$host" 2>/dev/null | awk -F'=' '/round-trip|rtt/ {split($2, a, "/"); gsub(/[[:space:]]/, "", a[2]); if (a[2] != "") printf "%.0f ms", a[2]}'
 }
 
-web_latency() {
+normalize_proxy_url() {
   local proxy="$1"
-  local proxy_url
-  local timing
-  if [ -n "$proxy" ] && [ "$proxy" != "-" ]; then
-    if echo "$proxy" | grep -q "://"; then
-      proxy_url="$proxy"
-    else
-      proxy_url="http://$proxy"
-    fi
-    timing="$(curl --proxy "$proxy_url" -L -m 2 -o /dev/null -s -w "%{time_total}" https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null)"
+  if [ -z "$proxy" ] || [ "$proxy" = "none" ] || [ "$proxy" = "-" ]; then
+    echo ""
+  elif echo "$proxy" | grep -q "://"; then
+    echo "$proxy"
   else
-    timing="$(curl -L -m 2 -o /dev/null -s -w "%{time_total}" https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null)"
+    echo "http://$proxy"
   fi
-  if [ -n "$timing" ]; then
-    awk -v v="$timing" 'BEGIN {if (v > 0) printf "%.0f ms", v * 1000}'
+}
+
+fetch_url() {
+  local proxy="$1"
+  local url="$2"
+  if [ -n "$proxy" ]; then
+    curl --proxy "$proxy" --connect-timeout 1.5 -L -m 3 -s "$url" 2>/dev/null
   else
-    echo "-"
+    curl --connect-timeout 1.5 -L -m 3 -s "$url" 2>/dev/null
+  fi
+}
+
+probe_ipinfo() {
+  local proxy="$1"
+  local body
+  body="$(fetch_url "$proxy" "https://ipinfo.io/json")"
+  local ip city country org
+  ip="$(echo "$body" | sed -n 's/.*"ip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  city="$(echo "$body" | sed -n 's/.*"city"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  country="$(echo "$body" | sed -n 's/.*"country"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  org="$(echo "$body" | sed -n 's/.*"org"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  if [ -n "$ip" ] && [ -n "$country" ]; then
+    echo "$ip|$country|${city:-"-"}|${org:-"-"}|ipinfo.io|-"
+  fi
+}
+
+probe_myip() {
+  local proxy="$1"
+  local body
+  body="$(fetch_url "$proxy" "https://api.myip.com")"
+  local ip country
+  ip="$(echo "$body" | sed -n 's/.*"ip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  country="$(echo "$body" | sed -n 's/.*"cc"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  if [ -n "$ip" ] && [ -n "$country" ]; then
+    echo "$ip|$country|-|-|MyIP.com|-"
+  fi
+}
+
+probe_cloudflare() {
+  local proxy="$1"
+  local body
+  if [ -n "$proxy" ]; then
+    body="$(curl --proxy "$proxy" --connect-timeout 1.5 -L -m 3 -s -w '\n__time_total=%{time_total}' https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null)"
+  else
+    body="$(curl --connect-timeout 1.5 -L -m 3 -s -w '\n__time_total=%{time_total}' https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null)"
+  fi
+  local ip country colo
+  local timing latency
+  ip="$(echo "$body" | awk -F= '$1 == "ip" {print $2; exit}' | trim)"
+  country="$(echo "$body" | awk -F= '$1 == "loc" {print $2; exit}' | trim)"
+  colo="$(echo "$body" | awk -F= '$1 == "colo" {print $2; exit}' | trim)"
+  timing="$(echo "$body" | awk -F= '$1 == "__time_total" {print $2; exit}' | trim)"
+  latency="-"
+  if [ -n "$timing" ]; then
+    latency="$(awk -v v="$timing" 'BEGIN {if (v > 0) printf "%.0f ms", v * 1000}')"
+  fi
+  if [ -n "$ip" ] && [ -n "$country" ]; then
+    echo "$ip|$country|${colo:-"-"}|-|Cloudflare trace|$latency"
   fi
 }
 
@@ -211,32 +294,12 @@ warp_settings="$(safe_run warp-cli settings)"
 dns_state="$(safe_run scutil --dns)"
 proxy_state="$(safe_run scutil --proxy)"
 route_state="$(safe_run route -n get default)"
-services_state="$(safe_run networksetup -listallnetworkservices)"
 
 warp_connected="no"
 if echo "$warp_status" | grep -Eqi "^Status update:[[:space:]]+Connected$"; then
   warp_connected="yes"
 fi
 
-warp_network="$(echo "$warp_status" | awk -F': ' '/Network:/ {print $2; exit}' | trim)"
-if [ -z "$warp_network" ]; then
-  warp_network="-"
-fi
-
-allow_mode_switch="$(echo "$warp_settings" | awk -F': ' '/Allow Mode Switch:/ {print $2; exit}' | trim)"
-if [ -z "$allow_mode_switch" ]; then
-  allow_mode_switch="-"
-elif [ "$allow_mode_switch" != "true" ]; then
-  health="WARN"
-  problems+=("WARP mode switch is not allowed")
-fi
-
-connectivity_disabled="$(echo "$warp_settings" | awk -F': ' '/Connectivity Checks Disabled:/ {print $2; exit}' | trim)"
-if [ -z "$connectivity_disabled" ]; then
-  connectivity_disabled="false"
-fi
-
-warp_mode="$(echo "$warp_settings" | awk -F': ' '/Mode:/ {print $2; exit}' | trim)"
 warp_protocol="$(echo "$warp_settings" | awk -F': ' '/WARP tunnel protocol:/ {print $2; exit}' | trim)"
 warp_org="$(echo "$warp_settings" | awk -F': ' '/Organization:/ {print $2; exit}' | trim)"
 
@@ -269,12 +332,10 @@ if [ -z "$iface" ]; then
 fi
 
 warp_iface="-"
-warp_ip="-"
 for dev in $(ifconfig -l 2>/dev/null | tr ' ' '\n' | grep '^utun'); do
   info="$(safe_run ifconfig "$dev")"
   if echo "$info" | grep -q "100\.96\.\|2606:4700:cf1"; then
     warp_iface="$dev"
-    warp_ip="$(echo "$info" | awk '/inet / {print $2; exit}' | trim)"
     break
   fi
 done
@@ -320,7 +381,7 @@ if [ ${#tunnel_ifaces[@]} -gt 0 ]; then
 fi
 
 now_ts="$(date +%s)"
-rate_state="/tmp/network-topology-rate.${USER}.state"
+rate_state="/tmp/network-topology-rate-lite.${USER}.state"
 en0_bytes="$(iface_bytes en0)"
 warp_bytes="- -"
 if [ "$active_tunnel_iface" != "-" ]; then
@@ -339,23 +400,33 @@ proxy_app="-"
 if [ "$proxy_pid" != "-" ]; then
   proxy_app="$(infer_proxy_app "$proxy_pid")"
 fi
-proxy_bytes="$(process_bytes "$proxy_process")"
+proxy_entry_name="-"
+proxy_entry_host="-"
+proxy_entry_port="-"
+proxy_entry_expected_country="-"
+proxy_entry_country_label="-"
+if [ "$proxy_app" = "v2rayN" ]; then
+  proxy_entry="$(v2rayn_active_entry)"
+  proxy_entry_name="$(echo "$proxy_entry" | awk -F'|' '{print $1}')"
+  proxy_entry_host="$(echo "$proxy_entry" | awk -F'|' '{print $2}')"
+  proxy_entry_port="$(echo "$proxy_entry" | awk -F'|' '{print $3}')"
+  proxy_entry_expected_country="$(expected_country_from_name "$proxy_entry_name")"
+  if [ "$proxy_entry_expected_country" != "-" ]; then
+    proxy_entry_country_label="$(country_flag "$proxy_entry_expected_country") $(country_cn "$proxy_entry_expected_country") $proxy_entry_expected_country"
+  fi
+fi
 en0_in="$(echo "$en0_bytes" | awk '{print $1}')"
 en0_out="$(echo "$en0_bytes" | awk '{print $2}')"
 warp_in="$(echo "$warp_bytes" | awk '{print $1}')"
 warp_out="$(echo "$warp_bytes" | awk '{print $2}')"
-proxy_in="$(echo "$proxy_bytes" | awk '{print $1}')"
-proxy_out="$(echo "$proxy_bytes" | awk '{print $2}')"
 
 en0_rate_down="calibrating"
 en0_rate_up="calibrating"
 warp_rate_down="calibrating"
 warp_rate_up="calibrating"
-proxy_rate_down="calibrating"
-proxy_rate_up="calibrating"
 
 if [ -f "$rate_state" ]; then
-  read -r prev_ts prev_en0_in prev_en0_out prev_warp_iface prev_warp_in prev_warp_out prev_proxy_process prev_proxy_in prev_proxy_out < "$rate_state"
+  read -r prev_ts prev_en0_in prev_en0_out prev_warp_iface prev_warp_in prev_warp_out < "$rate_state"
   elapsed=$(( now_ts - prev_ts ))
   if [ "$elapsed" -gt 0 ] 2>/dev/null; then
     if is_number "$en0_in" && is_number "$en0_out" && is_number "$prev_en0_in" && is_number "$prev_en0_out" && [ "$en0_in" -ge "$prev_en0_in" ] 2>/dev/null; then
@@ -366,84 +437,87 @@ if [ -f "$rate_state" ]; then
       warp_rate_down="$(format_rate $(( (warp_in - prev_warp_in) / elapsed )))"
       warp_rate_up="$(format_rate $(( (warp_out - prev_warp_out) / elapsed )))"
     fi
-    if [ "$proxy_process" = "$prev_proxy_process" ] && is_number "$proxy_in" && is_number "$proxy_out" && is_number "$prev_proxy_in" && is_number "$prev_proxy_out" && [ "$proxy_in" -ge "$prev_proxy_in" ] 2>/dev/null; then
-      proxy_rate_down="$(format_rate $(( (proxy_in - prev_proxy_in) / elapsed )))"
-      proxy_rate_up="$(format_rate $(( (proxy_out - prev_proxy_out) / elapsed )))"
-    fi
   fi
 fi
-echo "$now_ts ${en0_in:-0} ${en0_out:-0} ${active_tunnel_iface:-"-"} ${warp_in:-0} ${warp_out:-0} ${proxy_process:-"-"} ${proxy_in:-0} ${proxy_out:-0}" > "$rate_state"
-
-tailscale_service="unknown"
-if echo "$services_state" | grep -q "^\\*Tailscale$"; then
-  tailscale_service="disabled"
-elif echo "$services_state" | grep -q "^Tailscale$"; then
-  tailscale_service="enabled"
-  health="WARN"
-  problems+=("Tailscale service is enabled")
-else
-  tailscale_service="not found"
-fi
-
-tailscale_binary="not found"
-if command -v tailscale >/dev/null 2>&1; then
-  if safe_run tailscale status >/dev/null; then
-    tailscale_binary="ok"
-  else
-    tailscale_binary="broken"
-  fi
-fi
+echo "$now_ts ${en0_in:-0} ${en0_out:-0} ${active_tunnel_iface:-"-"} ${warp_in:-0} ${warp_out:-0}" > "$rate_state"
 
 public_ip="-"
 public_city="-"
-public_country="-"
 public_country_code="-"
 public_flag="🏳️"
 public_org="-"
-if command -v ipinfo >/dev/null 2>&1; then
-  ipinfo_out="$(safe_run ipinfo myip)"
-  public_ip="$(echo "$ipinfo_out" | sed -n 's/^- IP[[:space:]]*//p' | head -n 1 | trim)"
-  public_city="$(echo "$ipinfo_out" | sed -n 's/^- City[[:space:]]*//p' | head -n 1 | trim)"
-  public_country="$(echo "$ipinfo_out" | sed -n 's/^- Country[[:space:]]*//p' | head -n 1 | trim)"
-  public_country_code="$(echo "$public_country" | sed -n 's/.*(\([A-Za-z][A-Za-z]\)).*/\1/p' | head -n 1 | trim)"
-  public_org="$(echo "$ipinfo_out" | sed -n 's/^- Organization[[:space:]]*//p' | head -n 1 | trim)"
+public_source="-"
+public_probe_summary="-"
+public_latency="-"
+
+public_lookup_proxy=""
+if [ -n "$http_proxy" ]; then
+  public_lookup_proxy="$(normalize_proxy_url "$http_proxy")"
+elif [ -n "$https_proxy" ]; then
+  public_lookup_proxy="$(normalize_proxy_url "$https_proxy")"
+elif [ -n "$socks_proxy" ]; then
+  public_lookup_proxy="$(normalize_proxy_url "socks5h://$socks_proxy")"
+elif [ "$env_proxy" != "none" ]; then
+  public_lookup_proxy="$(normalize_proxy_url "$env_proxy")"
 fi
-if [ -z "$public_ip" ] || [ "$public_ip" = "-" ]; then
-  public_lookup_proxy=""
-  if [ -n "$http_proxy" ]; then
-    if echo "$http_proxy" | grep -q "://"; then
-      public_lookup_proxy="$http_proxy"
-    else
-      public_lookup_proxy="http://$http_proxy"
-    fi
-  elif [ -n "$socks_proxy" ]; then
-    if echo "$socks_proxy" | grep -q "://"; then
-      public_lookup_proxy="$socks_proxy"
-    else
-      public_lookup_proxy="socks5h://$socks_proxy"
-    fi
+
+probe_results=()
+for probe_result in "$(probe_myip "$public_lookup_proxy")" "$(probe_cloudflare "$public_lookup_proxy")"; do
+  if [ -n "$probe_result" ]; then
+    probe_results+=("$probe_result")
   fi
-  if [ -n "$public_lookup_proxy" ]; then
-    ipinfo_json="$(curl --proxy "$public_lookup_proxy" -L -m 3 -s https://ipinfo.io/json 2>/dev/null)"
-  else
-    ipinfo_json="$(curl -L -m 3 -s https://ipinfo.io/json 2>/dev/null)"
+done
+if [ ${#probe_results[@]} -eq 0 ]; then
+  probe_result="$(probe_ipinfo "$public_lookup_proxy")"
+  if [ -n "$probe_result" ]; then
+    probe_results+=("$probe_result")
   fi
-  public_ip="$(echo "$ipinfo_json" | sed -n 's/.*"ip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
-  public_city="$(echo "$ipinfo_json" | sed -n 's/.*"city"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
-  public_country_code="$(echo "$ipinfo_json" | sed -n 's/.*"country"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
-  public_org="$(echo "$ipinfo_json" | sed -n 's/.*"org"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
 fi
-if [ -z "$public_ip" ] || [ "$public_ip" = "-" ]; then
+
+if [ ${#probe_results[@]} -gt 0 ]; then
+  chosen_probe="${probe_results[1]}"
   if [ -n "$public_lookup_proxy" ]; then
-    cf_trace="$(curl --proxy "$public_lookup_proxy" -L -m 3 -s https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null)"
-  else
-    cf_trace="$(curl -L -m 3 -s https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null)"
+    for probe_result in "${probe_results[@]}"; do
+      probe_country="$(echo "$probe_result" | awk -F'|' '{print toupper($2)}')"
+      if [ "$probe_country" != "CN" ]; then
+        chosen_probe="$probe_result"
+        break
+      fi
+    done
   fi
-  public_ip="$(echo "$cf_trace" | awk -F= '$1 == "ip" {print $2; exit}' | trim)"
-  public_country_code="$(echo "$cf_trace" | awk -F= '$1 == "loc" {print $2; exit}' | trim)"
-  public_city="$(echo "$cf_trace" | awk -F= '$1 == "colo" {print $2; exit}' | trim)"
-  if [ -n "$public_ip" ]; then
-    public_org="Cloudflare trace"
+
+  public_ip="$(echo "$chosen_probe" | awk -F'|' '{print $1}')"
+  public_country_code="$(echo "$chosen_probe" | awk -F'|' '{print toupper($2)}')"
+  public_city="$(echo "$chosen_probe" | awk -F'|' '{print $3}')"
+  public_org="$(echo "$chosen_probe" | awk -F'|' '{print $4}')"
+  public_source="$(echo "$chosen_probe" | awk -F'|' '{print $5}')"
+  public_latency="$(echo "$chosen_probe" | awk -F'|' '{print $6}')"
+
+  if [ -z "$public_city" ] || [ "$public_city" = "-" ]; then
+    for probe_result in "${probe_results[@]}"; do
+      probe_country="$(echo "$probe_result" | awk -F'|' '{print toupper($2)}')"
+      probe_city="$(echo "$probe_result" | awk -F'|' '{print $3}')"
+      if [ "$probe_country" = "$public_country_code" ] && [ -n "$probe_city" ] && [ "$probe_city" != "-" ]; then
+        public_city="$probe_city"
+        break
+      fi
+    done
+  fi
+  if [ -z "$public_latency" ] || [ "$public_latency" = "-" ]; then
+    for probe_result in "${probe_results[@]}"; do
+      probe_latency="$(echo "$probe_result" | awk -F'|' '{print $6}')"
+      if [ -n "$probe_latency" ] && [ "$probe_latency" != "-" ]; then
+        public_latency="$probe_latency"
+        break
+      fi
+    done
+  fi
+
+  public_probe_summary="$(printf '%s\n' "${probe_results[@]}" | awk -F'|' '{printf "%s=%s/%s ", $5, toupper($2), $1}' | trim)"
+  probe_country_count="$(printf '%s\n' "${probe_results[@]}" | awk -F'|' 'NF >= 2 && $2 != "" {seen[toupper($2)] = 1} END {for (c in seen) count++; print count + 0}')"
+  if [ "$probe_country_count" -gt 1 ] 2>/dev/null; then
+    health="WARN"
+    problems+=("出口检测源不一致：$public_probe_summary")
   fi
 fi
 if [ -z "$public_ip" ]; then
@@ -466,10 +540,17 @@ fi
 if [ -z "$public_org" ]; then
   public_org="-"
 fi
+if [ -z "$public_source" ]; then
+  public_source="-"
+fi
+public_location="$public_country_label"
+if [ "$public_city" != "-" ]; then
+  public_location="$public_location / $public_city"
+fi
 
 proxy_label="none"
 if [ "$system_proxy" = "enabled" ]; then
-  proxy_label="${http_proxy:-${socks_proxy:-enabled}}"
+  proxy_label="${http_proxy:-${https_proxy:-${socks_proxy:-enabled}}}"
 elif [ "$env_proxy" != "none" ]; then
   proxy_label="$env_proxy"
 fi
@@ -479,13 +560,7 @@ if [ -z "$gateway_latency" ]; then
   gateway_latency="-"
 fi
 
-latency_proxy=""
-if [ -n "$http_proxy" ]; then
-  latency_proxy="$http_proxy"
-elif [ -n "$socks_proxy" ]; then
-  latency_proxy="socks5h://$socks_proxy"
-fi
-exit_latency="$(web_latency "$latency_proxy")"
+exit_latency="$public_latency"
 if [ -z "$exit_latency" ]; then
   exit_latency="-"
 fi
@@ -505,26 +580,34 @@ if is_number "$gateway_latency_ms" && [ "$gateway_latency_ms" -ge "$GATEWAY_LATE
   problems+=("内网网关延迟偏高：$gateway_latency")
 fi
 
-if [ "$system_vpn_active" = "yes" ] && [ "$proxy_label" != "none" ]; then
-  if [ "$active_tunnel_route_mode" = "全局默认路由" ]; then
-    status_line="🛡️🛰️ 全局VPN+代理"
-  elif [ "$active_tunnel_route_mode" = "分流隧道" ]; then
-    status_line="🧩🛰️ 分流VPN+代理"
-  else
-    status_line="🔌🛰️ VPN接口+代理"
+if [ "$public_ip" != "-" ] && [ "$public_country_code" != "-" ]; then
+  status_latency=""
+  if [ "$exit_latency" != "-" ]; then
+    status_latency="（$exit_latency）"
   fi
-elif [ "$system_vpn_active" = "yes" ]; then
-  if [ "$active_tunnel_route_mode" = "全局默认路由" ]; then
-    status_line="🛡️ 全局VPN"
-  elif [ "$active_tunnel_route_mode" = "分流隧道" ]; then
-    status_line="🧩 分流VPN"
-  else
-    status_line="🔌 VPN接口"
-  fi
-elif [ "$proxy_label" != "none" ]; then
-  status_line="🛰️ 代理${PROXY_PORT}"
+  status_line="$public_flag $public_country_name$status_latency"
 else
-  status_line="🏠 本地连接"
+  if [ "$system_vpn_active" = "yes" ] && [ "$proxy_label" != "none" ]; then
+    if [ "$active_tunnel_route_mode" = "全局默认路由" ]; then
+      status_line="🛡️🛰️ 全局VPN+代理"
+    elif [ "$active_tunnel_route_mode" = "分流隧道" ]; then
+      status_line="🧩🛰️ 分流VPN+代理"
+    else
+      status_line="🔌🛰️ VPN接口+代理"
+    fi
+  elif [ "$system_vpn_active" = "yes" ]; then
+    if [ "$active_tunnel_route_mode" = "全局默认路由" ]; then
+      status_line="🛡️ 全局VPN"
+    elif [ "$active_tunnel_route_mode" = "分流隧道" ]; then
+      status_line="🧩 分流VPN"
+    else
+      status_line="🔌 VPN接口"
+    fi
+  elif [ "$proxy_label" != "none" ]; then
+    status_line="🛰️ 代理${proxy_port}"
+  else
+    status_line="🏠 本地连接"
+  fi
 fi
 
 if [ "$public_ip" = "-" ]; then
@@ -568,13 +651,14 @@ fi
 echo "---"
 echo "${external_mark} 外网情况"
 if [ "$public_ip" != "-" ]; then
-  echo "↳ ✅ 出口  $public_ip  $public_flag $public_country_label / $public_city  ⏱️ $exit_latency"
+  echo "↳ ✅ 出口  $public_ip  $public_flag $public_location  ⏱️ $exit_latency"
 else
   echo "↳ ⚠️ 出口  -  ⏱️ $exit_latency"
 fi
-if [ "$public_org" = "Cloudflare trace" ]; then
-  echo "  • 🔎 检测源  Cloudflare trace"
-elif [ "$public_org" != "-" ]; then
+if [ "$public_source" != "-" ]; then
+  echo "  • 🔎 检测源  $public_source"
+fi
+if [ "$public_org" != "-" ]; then
   echo "  • 🏢 运营商  $public_org"
 fi
 echo "---"
@@ -608,7 +692,18 @@ else
   echo "↳ ⚪ 本地代理  未启用"
 fi
 if [ "$proxy_process" != "-" ]; then
-  echo "   核心 $proxy_process · ↓ $(format_activity_rate "$proxy_rate_down") ↑ $(format_activity_rate "$proxy_rate_up")"
+  echo "   代理核心  $proxy_process · 运行中"
+fi
+if [ "$proxy_entry_host" != "-" ] && [ "$proxy_entry_port" != "-" ]; then
+  if [ "$proxy_entry_country_label" != "-" ]; then
+    echo "   节点入口  $proxy_entry_country_label · $proxy_entry_name"
+    echo "   入口地址  $proxy_entry_host:$proxy_entry_port"
+  else
+    echo "   节点入口  $proxy_entry_name · $proxy_entry_host:$proxy_entry_port"
+  fi
+  if [ "$proxy_entry_expected_country" != "-" ] && [ "$public_country_code" != "-" ] && [ "$proxy_entry_expected_country" != "$public_country_code" ]; then
+    echo "   提示  节点入口像 $(country_cn "$proxy_entry_expected_country")，但实际出口是 $public_country_label"
+  fi
 fi
 echo "---"
 echo "${lan_mark} 内网情况"

@@ -15,20 +15,21 @@ It is designed for people who often run a mix of VPN clients, Cloudflare WARP, c
 ## Preview
 
 ```text
-🧩🧦 分流VPN+代理
+🇺🇸 美国（1300 ms）
 ---
 ✅ 网络拓扑正常    🔄 刷新
 ---
 ✅ 外网情况
-↳ ✅ 出口  104.28.x.x  🇸🇬 新加坡 SG / Singapore  ⏱️ 1200 ms
-  • 🏢 运营商  AS13335 Cloudflare, Inc.
+↳ ✅ 出口  192.0.2.10  🇺🇸 美国 US / LAX  ⏱️ 1300 ms
+  • 🔎 检测源  MyIP.com
 ---
 ✅ VPN / 代理
-↳ 🧭 当前  双层：分流隧道 + 本地代理
-↳ ✅ 系统 VPN  aTrust  utun7 / 10.0.0.2
-   分流隧道 / 40 路由 · ↓ 空闲 ↑ 空闲
+↳ 🧭 当前  单层：仅本地代理
+↳ ⚪ 系统 VPN  未检测到
 ↳ ✅ 本地代理  v2rayN  127.0.0.1:10808
-   核心 xray · ↓ 34.5 KB/s ↑ 35.0 KB/s
+   代理核心  xray · 运行中
+   节点入口  🇺🇸 美国 US · US
+   入口地址  203.0.113.10:443
 ---
 ✅ 内网情况
 ↳ ✅ DNS  192.168.1.1
@@ -42,8 +43,7 @@ The current plugin output is Chinese-first. English labels can be added later as
 
 - macOS
 - [SwiftBar](https://swiftbar.app/)
-- zsh, curl, ping, ifconfig, route, scutil, netstat, lsof, nettop
-- Optional: `ipinfo` CLI for richer public IP metadata
+- zsh, curl, ping, ifconfig, route, scutil, netstat, lsof
 - Optional: `warp-cli` for Cloudflare WARP details
 
 Most required command line tools are already included with macOS.
@@ -81,6 +81,8 @@ SwiftBar runs plugin scripts directly. If you need custom values, edit the top o
 ## What It Detects
 
 - Public egress IP, country, city/colo, provider, latency
+- Proxy-aware public egress checks through the active macOS HTTP/HTTPS/SOCKS proxy
+- Cross-checking with MyIP and Cloudflare trace, with warnings when sources disagree
 - System VPN tunnel interfaces: `utun`, `tun`, `tap`, `ppp`
 - VPN route mode:
   - global default route
@@ -96,6 +98,7 @@ SwiftBar runs plugin scripts directly. If you need custom values, edit the top o
   - OpenVPN
   - v2rayN
 - Local proxy listener and parent app, such as `v2rayN -> xray -> 10808`
+- v2rayN active node entry, when available from the local v2rayN config/database
 - DNS servers
 - Default gateway
 - Wi-Fi and tunnel traffic rates
@@ -103,20 +106,21 @@ SwiftBar runs plugin scripts directly. If you need custom values, edit the top o
 ## Roadmap
 
 - Configurable Chinese/English labels
-- Faster refresh with cached external checks
+- Optional compact/verbose menu modes
 - Exportable diagnostic report
 - Native macOS floating desktop monitor using the same detection logic
 
 ## Notes
 
 - The plugin is read-only. It does not change network settings.
-- Public IP lookup uses `ipinfo` when available and falls back to `ipinfo.io/json` or Cloudflare trace.
+- Public IP lookup is proxy-aware. When macOS system proxy is enabled, public egress checks are explicitly sent through that proxy.
+- Public egress is checked with MyIP and Cloudflare trace. `ipinfo.io` is used only as a fallback when both primary checks fail.
 - Some VPN clients create inactive `utun` interfaces. The plugin only treats a tunnel as active when it has a real tunnel IP.
 - macOS and SwiftBar may compress whitespace in menu items. The plugin uses visible hierarchy markers like `↳` and `•`.
 
 ## Privacy
 
-The plugin displays local network and public egress information in your menu bar. It does not upload data except for public IP and latency checks against public endpoints such as ipinfo.io and Cloudflare trace.
+The plugin displays local network and public egress information in your menu bar. It does not upload data except for public IP and latency checks against public endpoints such as MyIP, Cloudflare trace, and fallback ipinfo.io.
 
 Before sharing screenshots, consider masking:
 
