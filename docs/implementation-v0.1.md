@@ -78,18 +78,22 @@ A script that:
 
 A script that:
 
-- Loads the trusted baseline from `~/.network-baseline/baseline.json`
+- Loads the trusted baseline from `~/.nbm/baseline.json`
 - Collects the current network state
 - Compares each drift field (IP, country, ASN, DNS, IPv6)
 - Outputs result in two modes:
   - **Human-readable**: list changed fields with old → new values
   - **Machine**: JSON with `status` ("stable" or "drift") and `changes` array
-- Exits with code 0 if stable, 1 if drift
+- Exit codes:
+  - 0 = stable (no drift detected)
+  - 1 = drift detected (one or more fields changed)
+  - 2 = no baseline found or error
 
 **Acceptance**:
 
 - `nbm-check.sh` returns 0 when nothing changed
 - `nbm-check.sh` returns 1 when IP/ASN/DNS/IPv6 changed
+- `nbm-check.sh` returns 2 when no baseline exists
 - JSON output includes `status` and `changes` fields
 - Human output shows old → new for each changed field
 
