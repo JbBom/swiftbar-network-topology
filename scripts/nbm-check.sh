@@ -13,6 +13,11 @@
 # Source:
 #   source scripts/nbm-check.sh
 #   nbm_check --json
+#
+# Exit codes:
+#   0 = stable (no drift detected)
+#   1 = drift detected (one or more fields changed)
+#   2 = no baseline found or error
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$SCRIPT_DIR/nbm-snapshot.sh"
