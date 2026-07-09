@@ -72,15 +72,27 @@ nbm_trust() {
   local now
   now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-  local snapshot annotated
-  snapshot="$(nbm_snapshot_collect)"
+  # Write snapshot to a temp file to isolate I/O (avoids JSON leaking to stdout).
+  local tmp_snapshot
+  tmp_snapshot="$(mktemp /tmp/nbm-trust-XXXXXX.json)"
+  trap "rm -f '$tmp_snapshot'" EXIT
+  nbm_snapshot_collect > "$tmp_snapshot"
 
   # Insert trusted_at into the JSON before "source".
   #   collected_at = snapshot capture time (set by nbm_snapshot_collect)
   #   trusted_at   = time when user confirmed this as the trusted baseline
-  annotated="$(echo "$snapshot" | sed '/  "source":/i\
+  local annotated
+  annotated="$(sed '/  "source":/i\
   "trusted_at": "'"$now"'",
-')"
+' "$tmp_snapshot")"
+
+  # --- parse fields for summary ---
+  local ip country asn dns ipv6
+  ip="$(echo "$annotated" | sed -n 's/.*"public_ipv4"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  country="$(echo "$annotated" | sed -n 's/.*"country"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  asn="$(echo "$annotated" | sed -n 's/.*"asn"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  dns="$(echo "$annotated" | sed -n 's/.*"dns_resolver"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p' | sed 's/",[[:space:]]*"/ /g; s/"//g' | head -1)"
+  ipv6="$(echo "$annotated" | sed -n 's/.*"ipv6_available"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/p' | _nbm_trim)"
 
   # --- save ---
   local dir
@@ -89,14 +101,19 @@ nbm_trust() {
   echo "$annotated" > "$NBM_SNAPSHOT_FILE"
 
   echo "Baseline trusted and saved."
-  echo "File: $NBM_SNAPSHOT_FILE"
+  echo "Path:    $NBM_SNAPSHOT_FILE"
+  echo "IPv4:    ${ip:-unknown}"
+  echo "Country: ${country:-unknown}"
+  echo "ASN:     ${asn:-unknown}"
+  echo "DNS:     ${dns:-none}"
+  echo "IPv6:    ${ipv6:-false}"
 }
 
 # ---- direct invocation guard --------------------------------------------
 # Only call nbm_trust when executed directly, not when sourced.
 if [[ -n "${ZSH_EVAL_CONTEXT:-}" ]]; then
-  # zsh
-  if [[ "${ZSH_EVAL_CONTEXT}" =~ "toplevel" ]]; then
+  # zsh: "toplevel" (exact) means direct execution.
+  if [[ "${ZSH_EVAL_CONTEXT}" == "toplevel" ]]; then
     nbm_trust "$@"
   fi
 elif [[ "${BASH_SOURCE[0]:-}" = "$0" ]]; then
