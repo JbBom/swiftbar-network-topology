@@ -11,7 +11,7 @@
 #   nbm_snapshot_save             # save current state to baseline file
 #   nbm_snapshot_load             # read baseline file, print JSON to stdout
 
-: ${NBM_SNAPSHOT_FILE:="$HOME/.network-baseline/baseline.json"}
+: ${NBM_SNAPSHOT_FILE:="$HOME/.nbm/baseline.json"}
 
 # ---- helpers ----------------------------------------------------------
 
@@ -68,7 +68,9 @@ nbm_snapshot_collect() {
     fi
   fi
 
-  # --- DNS resolvers from system config ----------------------------------
+  # --- DNS resolvers from system config --------------------------------
+  # v0.1 uses exact array comparison (order-sensitive).
+  # A future version should sort before comparing to avoid false drift.
   local dns_state raw_dns
   dns_state="$(scutil --dns 2>/dev/null)"
   raw_dns="$(echo "$dns_state" | awk '/nameserver\[[0-9]+\] :/ {print $3}' | awk '!seen[$0]++')"
@@ -98,6 +100,8 @@ nbm_snapshot_collect() {
     ipv6_available="true"
   fi
 
+  # collected_at = snapshot time.
+  # trusted_at is set later by nbm-trust.sh when the user confirms the baseline.
   # --- emit JSON ---------------------------------------------------------
   cat <<JSONEOF
 {
@@ -108,7 +112,7 @@ nbm_snapshot_collect() {
   "isp": "${isp:-null}",
   "dns_resolver": ${dns_resolver_json},
   "ipv6_available": ${ipv6_available},
-  "trusted_at": "${now}",
+  "collected_at": "${now}",
   "source": "${source:-unknown}"
 }
 JSONEOF
@@ -140,10 +144,19 @@ nbm_snapshot_load() {
   fi
 }
 
-# ---- direct invocation --------------------------------------------------
-# When executed directly (not sourced), default to collect.
-if [[ "${ZSH_EVAL_CONTEXT:-}" =~ "toplevel" ]] || \
-   { [[ -z "${ZSH_EVAL_CONTEXT:-}" ]] && [ "$0" = "${BASH_SOURCE:-}" ]; }; then
+# ---- direct invocation ------------------------------------------------
+# Only run when executed directly, not when sourced.
+if [[ -n "${ZSH_EVAL_CONTEXT:-}" ]]; then
+  # zsh: toplevel means direct execution
+  if [[ "${ZSH_EVAL_CONTEXT}" =~ "toplevel" ]]; then
+    case "${1:-}" in
+      save) nbm_snapshot_save ;;
+      load) nbm_snapshot_load ;;
+      *)    nbm_snapshot_collect ;;
+    esac
+  fi
+elif [[ "${BASH_SOURCE[0]:-}" = "$0" ]]; then
+  # bash: script path matches running path
   case "${1:-}" in
     save) nbm_snapshot_save ;;
     load) nbm_snapshot_load ;;
