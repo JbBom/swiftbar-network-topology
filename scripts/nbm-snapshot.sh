@@ -147,8 +147,9 @@ nbm_snapshot_load() {
 # ---- direct invocation ------------------------------------------------
 # Only run when executed directly, not when sourced.
 if [[ -n "${ZSH_EVAL_CONTEXT:-}" ]]; then
-  # zsh: toplevel means direct execution
-  if [[ "${ZSH_EVAL_CONTEXT}" =~ "toplevel" ]]; then
+  # zsh: "toplevel" (exact) means direct execution.
+  # "toplevel:file" means sourced from another toplevel script.
+  if [[ "${ZSH_EVAL_CONTEXT}" == "toplevel" ]]; then
     case "${1:-}" in
       save) nbm_snapshot_save ;;
       load) nbm_snapshot_load ;;
