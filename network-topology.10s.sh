@@ -641,8 +641,20 @@ elif [ "$proxy_label" != "none" ]; then
   connection_mode="单层：仅本地代理"
 fi
 
+# --- Network Baseline Monitor status --------------------------------
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+baseline_label="⚪ No Baseline"
+if [ -x "$SCRIPT_DIR/scripts/nbm-check.sh" ]; then
+  "$SCRIPT_DIR/scripts/nbm-check.sh" >/dev/null 2>&1
+  case $? in
+    0) baseline_label="🟢 Net Baseline: Stable" ;;
+    1) baseline_label="🟡 Net Baseline: Drift" ;;
+  esac
+fi
+
 echo "$status_line"
 echo "---"
+echo "$baseline_label"
 if [ "$health" = "OK" ]; then
   echo "✅ 网络拓扑正常    🔄 刷新 | refresh=true"
 else
