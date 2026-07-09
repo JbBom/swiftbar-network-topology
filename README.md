@@ -1,5 +1,17 @@
 # SwiftBar Network Topology / macOS 网络拓扑监控
 
+## Network Baseline Monitor Direction
+
+This project is evolving from a macOS network topology monitor into a small network baseline and drift detection tool.
+
+The first milestone is Network Baseline Monitor.
+
+It does not predict account risk, bypass platform risk controls, or judge whether an IP is safe.
+
+Its goal is simple:
+
+> Detect whether the current network environment has drifted from a trusted baseline.
+
 A SwiftBar plugin for monitoring macOS network topology: public egress, VPN tunnel mode, local proxy, DNS, gateway, latency, and live traffic rates.
 
 一个用于 SwiftBar 的 macOS 菜单栏网络拓扑监控插件：快速查看外网出口、VPN 路由模式、本地代理、DNS、网关、延迟和实时速率。
