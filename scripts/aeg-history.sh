@@ -94,6 +94,35 @@ aeg_history_record() {
   echo "recorded"
 }
 
+# aeg_alert_transition <current-status>
+# Records the latest assessment status and prints entered-alert only when the
+# current state transitions from any non-alert status into alert.
+aeg_alert_transition() {
+  local current_status="$1"
+  local previous_status tmp_state
+
+  mkdir -p "$AEG_STATE_DIR" || return 1
+  if ! _aeg_history_acquire_lock; then
+    echo "busy"
+    return 0
+  fi
+
+  previous_status="$(cat "$AEG_LAST_ALERT_STATUS_FILE" 2>/dev/null)"
+  tmp_state="$(mktemp "$AEG_STATE_DIR/.aeg-alert-state.XXXXXX")" || {
+    _aeg_history_release_lock
+    return 1
+  }
+  printf '%s\n' "$current_status" > "$tmp_state"
+  mv "$tmp_state" "$AEG_LAST_ALERT_STATUS_FILE"
+
+  _aeg_history_release_lock
+  if [ "$current_status" = "alert" ] && [ "$previous_status" != "alert" ]; then
+    echo "entered-alert"
+  else
+    echo "unchanged"
+  fi
+}
+
 aeg_history_main() {
   local count=20
   case "${1:-}" in

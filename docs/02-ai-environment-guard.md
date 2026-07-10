@@ -135,6 +135,11 @@ the assessment engine.
 - Record assessments on refresh
 - Send a macOS notification only on transitions into alert
 
+The notification state is persisted locally. Repeated SwiftBar refreshes while
+the environment remains in `alert` do not notify again; after the assessment
+recovers to a non-alert state, a later transition into `alert` sends one new
+notification.
+
 ### Phase 3: Preflight
 
 - One-command readiness check before starting a CLI

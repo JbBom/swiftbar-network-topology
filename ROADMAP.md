@@ -12,8 +12,9 @@
 
 ### Phase 2: SwiftBar Alerts
 
-- [ ] Show AI readiness and running applications
-- [ ] Record assessments during refresh
+- [x] Show AI readiness and running applications
+- [x] Record assessments during refresh
+- [x] Notify once when entering alert
 - [ ] Send a macOS notification on transitions into alert
 - [ ] Show recovery actions
 

@@ -149,6 +149,12 @@ Change-only events are stored at:
 ~/.nbm/history.jsonl
 ```
 
+SwiftBar shows the AEG status and the monitored AI applications currently
+running above the network details. It records each assessment on refresh, but
+the history only changes when the assessed state changes. When a monitored AI
+application is running and the environment enters `alert`, macOS sends one
+notification; it does not repeat while that alert remains active.
+
 See [`docs/02-ai-environment-guard.md`](docs/02-ai-environment-guard.md) for the
 architecture, event schema and safety boundaries.
 
