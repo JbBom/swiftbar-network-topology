@@ -643,12 +643,13 @@ fi
 
 # --- Network Baseline Monitor status --------------------------------
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-baseline_label="⚪ No Baseline"
+baseline_label="⚪ Net Baseline: Unavailable"
 if [ -x "$SCRIPT_DIR/scripts/nbm-check.sh" ]; then
   "$SCRIPT_DIR/scripts/nbm-check.sh" >/dev/null 2>&1
   case $? in
     0) baseline_label="🟢 Net Baseline: Stable" ;;
     1) baseline_label="🟡 Net Baseline: Drift" ;;
+    2) baseline_label="⚪ Net Baseline: No Baseline" ;;
   esac
 fi
 

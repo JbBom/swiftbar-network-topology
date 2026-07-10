@@ -63,11 +63,12 @@ Most required command line tools are already included with macOS.
 ## Install
 
 1. Install SwiftBar.
-2. Copy `network-topology.10s.sh` into your SwiftBar plugin folder.
+2. Copy `network-topology.10s.sh` and the `scripts/` directory into your SwiftBar plugin folder.
 3. Make it executable:
 
 ```sh
 chmod +x ~/SwiftBarPlugins/network-topology.10s.sh
+chmod +x ~/SwiftBarPlugins/scripts/nbm-*.sh
 ```
 
 4. Refresh SwiftBar.
@@ -76,6 +77,28 @@ You can also run:
 
 ```sh
 ./install.sh ~/SwiftBarPlugins
+```
+
+## Network Baseline Monitor
+
+Network Baseline Monitor checks whether the current network environment has drifted from a trusted baseline.
+
+Trust the current network:
+
+```sh
+scripts/nbm-trust.sh --yes
+```
+
+Check for drift:
+
+```sh
+scripts/nbm-check.sh
+```
+
+The trusted baseline is stored at:
+
+```text
+~/.nbm/baseline.json
 ```
 
 ## Configuration
