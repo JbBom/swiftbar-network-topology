@@ -41,9 +41,27 @@ _aeg_assessment_json() {
     "$(aeg_json_quote "$action_message")"
 }
 
+_aeg_send_alert_notification() {
+  local title="AI Environment Guard"
+  local message="$1"
+
+  if [ -n "${AEG_NOTIFICATION_COMMAND:-}" ]; then
+    "$AEG_NOTIFICATION_COMMAND" "$title" "$message"
+    return $?
+  fi
+
+  [ -x /usr/bin/osascript ] || return 1
+  /usr/bin/osascript - "$title" "$message" <<'APPLESCRIPT'
+on run argv
+  display notification (item 2 of argv) with title (item 1 of argv) subtitle "环境告警"
+end run
+APPLESCRIPT
+}
+
 aeg_assess() {
   local mode="human"
   local record=false
+  local notify_on_alert=false
   local network_json="${AEG_NETWORK_JSON:-}"
 
   while [ "$#" -gt 0 ]; do
@@ -60,6 +78,10 @@ aeg_assess() {
         record=true
         shift
         ;;
+      --notify-on-alert)
+        notify_on_alert=true
+        shift
+        ;;
       --network-json)
         if [ "$#" -lt 2 ]; then
           echo "--network-json requires a JSON value" >&2
@@ -69,7 +91,7 @@ aeg_assess() {
         shift 2
         ;;
       -h|--help)
-        echo "Usage: aeg-assess.sh [--json|--human] [--record] [--network-json JSON]"
+        echo "Usage: aeg-assess.sh [--json|--human] [--record] [--notify-on-alert] [--network-json JSON]"
         echo ""
         echo "Exit codes: 0 = ready, 1 = caution/unknown, 2 = alert"
         return 0
@@ -185,6 +207,18 @@ aeg_assess() {
     aeg_history_record "$assessment_json" "$fingerprint" >/dev/null || {
       echo "Failed to record AI environment history." >&2
     }
+  fi
+
+  if [ "$notify_on_alert" = true ]; then
+    local transition
+    transition="$(aeg_alert_transition "$assessment_status")" || {
+      echo "Failed to update alert notification state." >&2
+      transition=""
+    }
+    if [ "$transition" = "entered-alert" ]; then
+      _aeg_send_alert_notification "$reason_message $action_message" >/dev/null 2>&1 || \
+        echo "Failed to send macOS alert notification." >&2
+    fi
   fi
 
   if [ "$mode" = "json" ]; then

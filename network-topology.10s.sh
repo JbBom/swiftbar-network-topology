@@ -752,15 +752,21 @@ fi
 baseline_label="⚪ 网络基线：功能不可用"
 baseline_detail=""
 baseline_action_label="🔐 设为当前可信基线"
+aeg_label="⚪ AI 环境：功能不可用"
+aeg_status="unavailable"
+aeg_running_apps=""
+aeg_reason=""
+aeg_action=""
+baseline_json='{"status":"error","error":"baseline check unavailable"}'
 if [ -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
-  baseline_output="$(
+  baseline_json="$(
     NBM_CURRENT_STATE_READY=1 \
     NBM_CURRENT_PUBLIC_IPV4="$nbm_current_ip" \
     NBM_CURRENT_COUNTRY="$nbm_current_country" \
     NBM_CURRENT_ASN="$nbm_current_asn" \
     NBM_CURRENT_DNS_RESOLVER="$nbm_current_dns" \
     NBM_CURRENT_IPV6_AVAILABLE="$nbm_current_ipv6" \
-      /bin/zsh "$NBM_HELPER_DIR/nbm-check.sh" --human --current-env 2>/dev/null
+      /bin/zsh "$NBM_HELPER_DIR/nbm-check.sh" --json --current-env 2>/dev/null
   )"
   baseline_rc=$?
   case $baseline_rc in
@@ -770,6 +776,15 @@ if [ -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
       ;;
     1)
       baseline_label="🟡 网络基线：发生漂移"
+      baseline_output="$(
+        NBM_CURRENT_STATE_READY=1 \
+        NBM_CURRENT_PUBLIC_IPV4="$nbm_current_ip" \
+        NBM_CURRENT_COUNTRY="$nbm_current_country" \
+        NBM_CURRENT_ASN="$nbm_current_asn" \
+        NBM_CURRENT_DNS_RESOLVER="$nbm_current_dns" \
+        NBM_CURRENT_IPV6_AVAILABLE="$nbm_current_ipv6" \
+          /bin/zsh "$NBM_HELPER_DIR/nbm-check.sh" --human --current-env 2>/dev/null
+      )"
       baseline_detail="$(printf '%s\n' "$baseline_output" | sed -n \
         -e 's/^  public_ipv4:/↳ 公网 IPv4:/p' \
         -e 's/^  country:/↳ 国家\/地区:/p' \
@@ -782,7 +797,37 @@ if [ -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
   esac
 fi
 
+if [ -f "$NBM_HELPER_DIR/aeg-assess.sh" ]; then
+  aeg_output="$(
+    /bin/zsh "$NBM_HELPER_DIR/aeg-assess.sh" \
+      --json --record --notify-on-alert --network-json "$baseline_json" 2>/dev/null
+  )"
+  # The assessment JSON also contains network.status. Use the first status
+  # field emitted by aeg-assess.sh instead of a greedy JSON-wide match.
+  aeg_status="$(printf '%s' "$aeg_output" | awk -F'"status":"' 'NF > 1 { split($2, value, "\""); print value[1]; exit }')"
+  aeg_running_apps="$(printf '%s' "$aeg_output" | grep -o '"label":"[^"]*"' | sed 's/^"label":"//; s/"$//' | paste -sd '、' -)"
+  aeg_reason="$(printf '%s' "$aeg_output" | sed -n 's/.*"reasons":\[{"code":"[^"]*","message":"\([^"]*\)"}.*/\1/p' | head -1)"
+  aeg_action="$(printf '%s' "$aeg_output" | sed -n 's/.*"actions":\[{"code":"[^"]*","message":"\([^"]*\)"}.*/\1/p' | head -1)"
+  case "$aeg_status" in
+    ready) aeg_label="🟢 AI 环境：可以运行" ;;
+    caution) aeg_label="🟡 AI 环境：需要确认" ;;
+    alert) aeg_label="🚨 AI 环境：请处理" ;;
+    unknown) aeg_label="⚪ AI 环境：无法判断" ;;
+  esac
+fi
+
 echo "$status_line"
+echo "---"
+echo "$aeg_label"
+if [ -n "$aeg_running_apps" ]; then
+  echo "↳ 运行中的 AI：$aeg_running_apps"
+else
+  echo "↳ 运行中的 AI：未检测到"
+fi
+if [ "$aeg_status" = "caution" ] || [ "$aeg_status" = "alert" ] || [ "$aeg_status" = "unknown" ]; then
+  [ -n "$aeg_reason" ] && echo "↳ 原因：$aeg_reason"
+  [ -n "$aeg_action" ] && echo "↳ 建议：$aeg_action"
+fi
 echo "---"
 echo "$baseline_label"
 if [ -n "$baseline_detail" ]; then
