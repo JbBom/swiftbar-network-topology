@@ -1,0 +1,6 @@
+# id	label	lowercase include regex	optional exclude regex
+chatgpt-desktop	ChatGPT 桌面端	/applications/chatgpt[.]app/contents/macos/chatgpt([[:space:]]|$)
+codex-desktop	Codex 桌面端	/applications/codex[.]app/contents/macos/codex([[:space:]]|$)
+codex-cli	Codex CLI	(^|[[:space:]])([^[:space:]]*/)?codex([[:space:]]|$)	/codex framework[.]framework/|/codex computer use[.]app/|codex-code-mode-host
+claude-code	Claude Code	(^|[[:space:]])([^[:space:]]*/)?claude([[:space:]]|$)	/claude code/
+gemini-cli	Gemini CLI	(^|[[:space:]])([^[:space:]]*/)?gemini([[:space:]]|$)

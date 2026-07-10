@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add the AI Environment Guard framework and architecture contract.
+- Add configurable AI process detection for ChatGPT, Codex, Claude Code and Gemini.
+- Add readiness assessment states and change-only JSONL history.
 - Reuse the SwiftBar plugin's current network state for baseline comparison.
 - Cache ASN data with the existing public egress probes.
 - Fix IPv6 boolean parsing on macOS.

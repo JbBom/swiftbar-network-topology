@@ -1,5 +1,29 @@
 # Roadmap
 
+## AI Environment Guard
+
+### Phase 1: Framework
+
+- [x] AI application process profiles
+- [x] Read-only process detection
+- [x] Readiness state machine
+- [x] Change-only JSONL event history
+- [x] Isolated regression tests
+
+### Phase 2: SwiftBar Alerts
+
+- [ ] Show AI readiness and running applications
+- [ ] Record assessments during refresh
+- [ ] Send a macOS notification on transitions into alert
+- [ ] Show recovery actions
+
+### Phase 3: Preflight and Profiles
+
+- [ ] One-command preflight before launching an AI CLI
+- [ ] Per-application trusted environment profiles
+- [ ] System timezone, locale and endpoint consistency
+- [ ] Browser consistency as a separate optional module
+
 ## SwiftBar Plugin
 
 - Add language switch for Chinese and English labels.
@@ -27,4 +51,3 @@ Possible implementation:
 - transparent floating panel
 - same shell detection engine as the SwiftBar plugin
 - optional compact and detailed modes
-

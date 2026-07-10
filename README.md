@@ -64,11 +64,12 @@ Most required command line tools are already included with macOS.
 
 1. Install SwiftBar.
 2. Copy `network-topology.10s.sh` into your SwiftBar plugin folder.
-3. Copy the NBM helper scripts outside the SwiftBar plugin folder:
+3. Copy the NBM/AEG helpers and app profile outside the SwiftBar plugin folder:
 
 ```sh
-mkdir -p ~/.nbm/bin
-cp scripts/nbm-*.sh ~/.nbm/bin/
+mkdir -p ~/.nbm/bin ~/.nbm/config
+cp scripts/nbm-*.sh scripts/aeg-*.sh ~/.nbm/bin/
+cp config/ai-apps.tsv ~/.nbm/config/
 ```
 
 SwiftBar scans plugin subdirectories, so putting executable helper scripts
@@ -78,7 +79,7 @@ inside the plugin folder creates unwanted menu bar items.
 
 ```sh
 chmod +x ~/SwiftBarPlugins/network-topology.10s.sh
-chmod +x ~/.nbm/bin/nbm-*.sh
+chmod +x ~/.nbm/bin/nbm-*.sh ~/.nbm/bin/aeg-*.sh
 ```
 
 5. Refresh SwiftBar.
@@ -116,6 +117,40 @@ The trusted baseline is stored at:
 ```text
 ~/.nbm/baseline.json
 ```
+
+## AI Environment Guard
+
+AI Environment Guard combines the network baseline result with monitored AI
+applications. It reports operational readiness rather than predicting account bans.
+
+Run a readiness check:
+
+```sh
+~/.nbm/bin/aeg-assess.sh
+```
+
+Record only state changes to history:
+
+```sh
+~/.nbm/bin/aeg-assess.sh --record
+```
+
+The initial profiles cover ChatGPT desktop, Codex desktop/CLI, Claude Code and
+Gemini CLI. The assessment states are:
+
+- `ready`: the network matches the trusted baseline.
+- `caution`: drift exists before an AI application is launched.
+- `alert`: drift or visibility loss occurs while a monitored AI application runs.
+- `unknown`: required baseline or process information is unavailable.
+
+Change-only events are stored at:
+
+```text
+~/.nbm/history.jsonl
+```
+
+See [`docs/02-ai-environment-guard.md`](docs/02-ai-environment-guard.md) for the
+architecture, event schema and safety boundaries.
 
 ## Configuration
 
