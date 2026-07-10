@@ -63,15 +63,25 @@ Most required command line tools are already included with macOS.
 ## Install
 
 1. Install SwiftBar.
-2. Copy `network-topology.10s.sh` and the `scripts/` directory into your SwiftBar plugin folder.
-3. Make it executable:
+2. Copy `network-topology.10s.sh` into your SwiftBar plugin folder.
+3. Copy the NBM helper scripts outside the SwiftBar plugin folder:
+
+```sh
+mkdir -p ~/.nbm/bin
+cp scripts/nbm-*.sh ~/.nbm/bin/
+```
+
+SwiftBar scans plugin subdirectories, so putting executable helper scripts
+inside the plugin folder creates unwanted menu bar items.
+
+4. Make the plugin and helpers executable:
 
 ```sh
 chmod +x ~/SwiftBarPlugins/network-topology.10s.sh
-chmod +x ~/SwiftBarPlugins/scripts/nbm-*.sh
+chmod +x ~/.nbm/bin/nbm-*.sh
 ```
 
-4. Refresh SwiftBar.
+5. Refresh SwiftBar.
 
 You can also run:
 

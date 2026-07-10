@@ -5,9 +5,14 @@
 
 PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# 可调参数：SwiftBar 每 10 秒刷新一次，但外网 IP 查询默认缓存 30 秒，避免菜单栏卡顿。
 PROXY_PORT="${PROXY_PORT:-10808}"
+PROXY_PORTS="${PROXY_PORTS:-$PROXY_PORT 7890 7897 6152 20170}"
+PUBLIC_PROBE_CACHE_SECONDS="${PUBLIC_PROBE_CACHE_SECONDS:-30}"
 EXTERNAL_LATENCY_WARN_MS="${EXTERNAL_LATENCY_WARN_MS:-3000}"
 GATEWAY_LATENCY_WARN_MS="${GATEWAY_LATENCY_WARN_MS:-80}"
+CACHE_DIR="${TMPDIR:-/tmp}/network-topology-${USER}"
+mkdir -p "$CACHE_DIR" 2>/dev/null
 
 safe_run() {
   "$@" 2>/dev/null
@@ -15,6 +20,27 @@ safe_run() {
 
 trim() {
   sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+first_nonempty() {
+  local v
+  for v in "$@"; do
+    if [ -n "$v" ] && [ "$v" != "none" ] && [ "$v" != "-" ]; then
+      echo "$v"
+      return
+    fi
+  done
+  echo ""
+}
+
+# 轻量 JSON 字段提取：优先 jq，没有 jq 时用 sed 兜底。
+json_val() {
+  local key="$1"
+  if command -v jq >/dev/null 2>&1; then
+    jq -r --arg k "$key" '.[$k] // empty' 2>/dev/null
+  else
+    sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n 1
+  fi
 }
 
 country_flag() {
@@ -59,7 +85,12 @@ country_cn() {
 
 iface_bytes() {
   local ifc="$1"
-  netstat -ibn 2>/dev/null | awk -v ifc="$ifc" '$1 == ifc && $3 ~ /^<Link/ {print $(NF-4), $(NF-1); exit}'
+  # macOS netstat -ibn 字段在不同系统版本上略有差异；这里优先取 <Link#...> 行的 Ibytes / Obytes。
+  netstat -ibn 2>/dev/null | awk -v ifc="$ifc" '
+    $1 == ifc && $0 ~ /<Link/ {
+      # 常见 macOS: Name Mtu Network Address Ipkts Ierrs Ibytes Opkts Oerrs Obytes Coll
+      if (NF >= 10) { print $(NF-4), $(NF-1); exit }
+    }'
 }
 
 format_activity_rate() {
@@ -179,6 +210,7 @@ v2rayn_active_entry() {
     echo "-|-|-"
     return
   fi
+  index_id="$(printf "%s" "$index_id" | sed "s/'/''/g")"
   sqlite3 -separator '|' "$db" "select coalesce(Remarks,'-'), coalesce(Address,'-'), coalesce(Port,'-') from ProfileItem where IndexId='$index_id' limit 1;" 2>/dev/null
 }
 
@@ -303,13 +335,16 @@ fi
 warp_protocol="$(echo "$warp_settings" | awk -F': ' '/WARP tunnel protocol:/ {print $2; exit}' | trim)"
 warp_org="$(echo "$warp_settings" | awk -F': ' '/Organization:/ {print $2; exit}' | trim)"
 
-dns_servers="$(echo "$dns_state" | awk '/nameserver\[[0-9]+\] :/ {print $3}' | awk '!seen[$0]++' | paste -sd ', ' -)"
+dns_servers="$(echo "$dns_state" | awk '/nameserver\[[0-9]+\] :/ {print $3}' | awk '!seen[$0]++' | paste -sd ',' - | sed 's/,/, /g')"
 if [ -z "$dns_servers" ]; then
   dns_servers="-"
   health="WARN"
   problems+=("No DNS server detected")
 fi
 
+http_proxy=""
+https_proxy=""
+socks_proxy=""
 system_proxy="none"
 if ! echo "$proxy_state" | grep -q "<dictionary> {"; then
   system_proxy="unknown"
@@ -381,15 +416,28 @@ if [ ${#tunnel_ifaces[@]} -gt 0 ]; then
 fi
 
 now_ts="$(date +%s)"
-rate_state="/tmp/network-topology-rate-lite.${USER}.state"
-en0_bytes="$(iface_bytes en0)"
+rate_state="$CACHE_DIR/rate.state"
+activity_iface="$iface"
+if [ -z "$activity_iface" ] || [ "$activity_iface" = "-" ]; then
+  activity_iface="en0"
+fi
+en0_bytes="$(iface_bytes "$activity_iface")"
 warp_bytes="- -"
 if [ "$active_tunnel_iface" != "-" ]; then
   warp_bytes="$(iface_bytes "$active_tunnel_iface")"
 fi
-proxy_port="$PROXY_PORT"
-proxy_pid="$(safe_run lsof -nP -iTCP:${proxy_port} -sTCP:LISTEN | awk 'NR == 2 {print $2; exit}' | trim)"
-proxy_process="$(safe_run lsof -nP -iTCP:${proxy_port} -sTCP:LISTEN | awk 'NR == 2 {print $1; exit}' | trim)"
+proxy_port="-"
+proxy_pid="-"
+proxy_process="-"
+for candidate_port in $PROXY_PORTS; do
+  line="$(safe_run lsof -nP -iTCP:${candidate_port} -sTCP:LISTEN | awk 'NR == 2 {print; exit}')"
+  if [ -n "$line" ]; then
+    proxy_port="$candidate_port"
+    proxy_process="$(echo "$line" | awk '{print $1; exit}' | trim)"
+    proxy_pid="$(echo "$line" | awk '{print $2; exit}' | trim)"
+    break
+  fi
+done
 if [ -z "$proxy_process" ]; then
   proxy_process="-"
 fi
@@ -451,26 +499,42 @@ public_probe_summary="-"
 public_latency="-"
 
 public_lookup_proxy=""
-if [ -n "$http_proxy" ]; then
-  public_lookup_proxy="$(normalize_proxy_url "$http_proxy")"
-elif [ -n "$https_proxy" ]; then
-  public_lookup_proxy="$(normalize_proxy_url "$https_proxy")"
-elif [ -n "$socks_proxy" ]; then
+if [ -n "$socks_proxy" ]; then
   public_lookup_proxy="$(normalize_proxy_url "socks5h://$socks_proxy")"
-elif [ "$env_proxy" != "none" ]; then
-  public_lookup_proxy="$(normalize_proxy_url "$env_proxy")"
+else
+  public_lookup_proxy="$(normalize_proxy_url "$(first_nonempty "$https_proxy" "$http_proxy" "$env_proxy")")"
 fi
 
 probe_results=()
-for probe_result in "$(probe_myip "$public_lookup_proxy")" "$(probe_cloudflare "$public_lookup_proxy")"; do
-  if [ -n "$probe_result" ]; then
-    probe_results+=("$probe_result")
+probe_cache_key="$(printf '%s' "$public_lookup_proxy" | cksum | awk '{print $1}')"
+probe_cache_file="$CACHE_DIR/public-probe.${probe_cache_key}.cache"
+probe_cache_fresh="no"
+if [ -f "$probe_cache_file" ]; then
+  cache_mtime="$(stat -f %m "$probe_cache_file" 2>/dev/null || stat -c %Y "$probe_cache_file" 2>/dev/null)"
+  if is_number "$cache_mtime" && [ $((now_ts - cache_mtime)) -lt "$PUBLIC_PROBE_CACHE_SECONDS" ] 2>/dev/null; then
+    probe_cache_fresh="yes"
   fi
-done
-if [ ${#probe_results[@]} -eq 0 ]; then
-  probe_result="$(probe_ipinfo "$public_lookup_proxy")"
-  if [ -n "$probe_result" ]; then
-    probe_results+=("$probe_result")
+fi
+if [ "$probe_cache_fresh" = "yes" ]; then
+  while IFS= read -r cached_probe; do
+    if [ -n "$cached_probe" ]; then
+      probe_results+=("$cached_probe")
+    fi
+  done < "$probe_cache_file"
+else
+  for probe_result in "$(probe_myip "$public_lookup_proxy")" "$(probe_cloudflare "$public_lookup_proxy")"; do
+    if [ -n "$probe_result" ]; then
+      probe_results+=("$probe_result")
+    fi
+  done
+  if [ ${#probe_results[@]} -eq 0 ]; then
+    probe_result="$(probe_ipinfo "$public_lookup_proxy")"
+    if [ -n "$probe_result" ]; then
+      probe_results+=("$probe_result")
+    fi
+  fi
+  if [ ${#probe_results[@]} -gt 0 ]; then
+    printf '%s\n' "${probe_results[@]}" > "$probe_cache_file"
   fi
 fi
 
@@ -550,9 +614,11 @@ fi
 
 proxy_label="none"
 if [ "$system_proxy" = "enabled" ]; then
-  proxy_label="${http_proxy:-${https_proxy:-${socks_proxy:-enabled}}}"
+  proxy_label="$(first_nonempty "$socks_proxy" "$https_proxy" "$http_proxy" "enabled")"
 elif [ "$env_proxy" != "none" ]; then
   proxy_label="$env_proxy"
+elif [ "$proxy_port" != "-" ]; then
+  proxy_label="127.0.0.1:$proxy_port（监听中，系统未开启）"
 fi
 
 gateway_latency="$(ping_latency "$gateway")"
@@ -643,11 +709,15 @@ fi
 
 # --- Network Baseline Monitor status --------------------------------
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+NBM_HELPER_DIR="${NBM_HELPER_DIR:-$SCRIPT_DIR/scripts}"
+if [ ! -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
+  NBM_HELPER_DIR="$HOME/.nbm/bin"
+fi
 baseline_label="⚪ Net Baseline: Unavailable"
 baseline_detail=""
 baseline_action_label="🔐 设为当前可信基线"
-if [ -x "$SCRIPT_DIR/scripts/nbm-check.sh" ]; then
-  baseline_output="$("$SCRIPT_DIR/scripts/nbm-check.sh" --human 2>/dev/null)"
+if [ -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
+  baseline_output="$(/bin/zsh "$NBM_HELPER_DIR/nbm-check.sh" --human 2>/dev/null)"
   baseline_rc=$?
   case $baseline_rc in
     0)
@@ -669,8 +739,8 @@ echo "$baseline_label"
 if [ -n "$baseline_detail" ]; then
   printf '%s\n' "$baseline_detail"
 fi
-if [ -x "$SCRIPT_DIR/scripts/nbm-trust.sh" ]; then
-  echo "$baseline_action_label | bash=\"$SCRIPT_DIR/scripts/nbm-trust.sh\" param1=--force terminal=true refresh=true"
+if [ -f "$NBM_HELPER_DIR/nbm-trust.sh" ]; then
+  echo "$baseline_action_label | bash=\"/bin/zsh\" param1=\"$NBM_HELPER_DIR/nbm-trust.sh\" param2=--force terminal=true refresh=true"
 fi
 if [ "$health" = "OK" ]; then
   echo "✅ 网络拓扑正常    🔄 刷新 | refresh=true"
@@ -685,7 +755,11 @@ else
   echo "↳ ⚠️ 出口  -  ⏱️ $exit_latency"
 fi
 if [ "$public_source" != "-" ]; then
-  echo "  • 🔎 检测源  $public_source"
+  if [ "$probe_cache_fresh" = "yes" ]; then
+    echo "  • 🔎 检测源  $public_source（缓存）"
+  else
+    echo "  • 🔎 检测源  $public_source"
+  fi
 fi
 if [ "$public_org" != "-" ]; then
   echo "  • 🏢 运营商  $public_org"
@@ -738,7 +812,7 @@ echo "---"
 echo "${lan_mark} 内网情况"
 echo "↳ ✅ DNS  $dns_servers"
 echo "↳ 🏠 网关  $gateway / $iface  ⏱️ $gateway_latency"
-echo "↳ 📈 Wi‑Fi  ↓ $(format_activity_rate "$en0_rate_down")   ↑ $(format_activity_rate "$en0_rate_up")"
+echo "↳ 📈 活动网卡 $activity_iface  ↓ $(format_activity_rate "$en0_rate_down")   ↑ $(format_activity_rate "$en0_rate_up")"
 if [ ${#problems[@]} -gt 0 ]; then
   echo "---"
   echo "⚠️ 问题"
