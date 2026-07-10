@@ -713,7 +713,7 @@ NBM_HELPER_DIR="${NBM_HELPER_DIR:-$SCRIPT_DIR/scripts}"
 if [ ! -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
   NBM_HELPER_DIR="$HOME/.nbm/bin"
 fi
-baseline_label="⚪ Net Baseline: Unavailable"
+baseline_label="⚪ 网络基线：功能不可用"
 baseline_detail=""
 baseline_action_label="🔐 设为当前可信基线"
 if [ -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
@@ -721,15 +721,20 @@ if [ -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
   baseline_rc=$?
   case $baseline_rc in
     0)
-      baseline_label="🟢 Net Baseline: Stable"
+      baseline_label="🟢 网络基线：稳定"
       baseline_action_label="🔐 更新可信基线"
       ;;
     1)
-      baseline_label="🟡 Net Baseline: Drift"
-      baseline_detail="$(printf '%s\n' "$baseline_output" | sed -n 's/^  /↳ /p')"
+      baseline_label="🟡 网络基线：发生漂移"
+      baseline_detail="$(printf '%s\n' "$baseline_output" | sed -n \
+        -e 's/^  public_ipv4:/↳ 公网 IPv4:/p' \
+        -e 's/^  country:/↳ 国家\/地区:/p' \
+        -e 's/^  asn:/↳ ASN:/p' \
+        -e 's/^  dns_resolver:/↳ DNS:/p' \
+        -e 's/^  ipv6_available:/↳ IPv6:/p' | sed 's/ -> / → /g')"
       baseline_action_label="🔐 更新可信基线"
       ;;
-    2) baseline_label="⚪ Net Baseline: No Baseline" ;;
+    2) baseline_label="⚪ 网络基线：未建立" ;;
   esac
 fi
 
