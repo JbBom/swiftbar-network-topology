@@ -95,6 +95,10 @@ Check for drift:
 scripts/nbm-check.sh
 ```
 
+In SwiftBar, the baseline section shows changed fields when drift is detected.
+The menu also includes an action to update the trusted baseline; it opens a
+terminal confirmation before replacing an existing baseline.
+
 The trusted baseline is stored at:
 
 ```text

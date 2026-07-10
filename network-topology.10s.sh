@@ -644,11 +644,21 @@ fi
 # --- Network Baseline Monitor status --------------------------------
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 baseline_label="⚪ Net Baseline: Unavailable"
+baseline_detail=""
+baseline_action_label="🔐 设为当前可信基线"
 if [ -x "$SCRIPT_DIR/scripts/nbm-check.sh" ]; then
-  "$SCRIPT_DIR/scripts/nbm-check.sh" >/dev/null 2>&1
-  case $? in
-    0) baseline_label="🟢 Net Baseline: Stable" ;;
-    1) baseline_label="🟡 Net Baseline: Drift" ;;
+  baseline_output="$("$SCRIPT_DIR/scripts/nbm-check.sh" --human 2>/dev/null)"
+  baseline_rc=$?
+  case $baseline_rc in
+    0)
+      baseline_label="🟢 Net Baseline: Stable"
+      baseline_action_label="🔐 更新可信基线"
+      ;;
+    1)
+      baseline_label="🟡 Net Baseline: Drift"
+      baseline_detail="$(printf '%s\n' "$baseline_output" | sed -n 's/^  /↳ /p')"
+      baseline_action_label="🔐 更新可信基线"
+      ;;
     2) baseline_label="⚪ Net Baseline: No Baseline" ;;
   esac
 fi
@@ -656,6 +666,12 @@ fi
 echo "$status_line"
 echo "---"
 echo "$baseline_label"
+if [ -n "$baseline_detail" ]; then
+  printf '%s\n' "$baseline_detail"
+fi
+if [ -x "$SCRIPT_DIR/scripts/nbm-trust.sh" ]; then
+  echo "$baseline_action_label | bash=\"$SCRIPT_DIR/scripts/nbm-trust.sh\" param1=--force terminal=true refresh=true"
+fi
 if [ "$health" = "OK" ]; then
   echo "✅ 网络拓扑正常    🔄 刷新 | refresh=true"
 else
