@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Reuse the SwiftBar plugin's current network state for baseline comparison.
+- Cache ASN data with the existing public egress probes.
+- Fix IPv6 boolean parsing on macOS.
+- Fix concurrent temporary-file creation for check and trust actions.
+
 ## 0.1.1
 
 - Fix public egress detection when macOS system proxy is enabled.

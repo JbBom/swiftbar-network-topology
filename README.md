@@ -108,6 +108,8 @@ scripts/nbm-check.sh
 In SwiftBar, the baseline section shows changed fields when drift is detected.
 The menu also includes an action to update the trusted baseline; it opens a
 terminal confirmation before replacing an existing baseline.
+The baseline check reuses the network state already collected by the plugin,
+so it does not start a second public-IP lookup on every SwiftBar refresh.
 
 The trusted baseline is stored at:
 
@@ -121,6 +123,7 @@ The plugin can be configured with environment variables:
 
 ```sh
 PROXY_PORT=10808
+PUBLIC_PROBE_CACHE_SECONDS=30
 EXTERNAL_LATENCY_WARN_MS=3000
 GATEWAY_LATENCY_WARN_MS=80
 ```

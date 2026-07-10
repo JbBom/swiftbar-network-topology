@@ -8,6 +8,7 @@
 # Usage:
 #   ./scripts/nbm-check.sh              # human-readable output
 #   ./scripts/nbm-check.sh --json       # machine-readable JSON
+#   ./scripts/nbm-check.sh --current-env # use caller-provided current state
 #   ./scripts/nbm-check.sh --help
 #
 # Source:
@@ -35,7 +36,9 @@ _nbm_json_get() {
 # Usage: echo "$json" | _nbm_json_get_bool "key"
 _nbm_json_get_bool() {
   local key="$1"
-  sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' | head -1
+  sed -n \
+    -e 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*\(true\).*/\1/p' \
+    -e 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*\(false\).*/\1/p' | head -1
 }
 
 # Extract the dns_resolver array as a compact JSON string.
@@ -46,23 +49,27 @@ _nbm_json_get_dns() {
 
 # ---- check function -----------------------------------------------------
 
-# nbm_check [--json] [--human]
-# --json   output machine-readable JSON
-# --human  output human-readable text (default)
+# nbm_check [--json] [--human] [--current-env]
+# --json         output machine-readable JSON
+# --human        output human-readable text (default)
+# --current-env  compare caller-provided NBM_CURRENT_* values
 #
 # Exit codes: 0 = stable, 1 = drift, 2 = missing baseline / error
 nbm_check() {
   local mode="human"
+  local use_current_env=false
 
   for arg in "$@"; do
     case "$arg" in
-      --json)  mode="json" ;;
-      --human) mode="human" ;;
+      --json)        mode="json" ;;
+      --human)       mode="human" ;;
+      --current-env) use_current_env=true ;;
       -h|--help)
-        echo "Usage: nbm_check [--json] [--human]"
+        echo "Usage: nbm_check [--json] [--human] [--current-env]"
         echo ""
-        echo "  --json    Machine-readable JSON output"
-        echo "  --human   Human-readable text output (default)"
+        echo "  --json         Machine-readable JSON output"
+        echo "  --human        Human-readable text output (default)"
+        echo "  --current-env  Use NBM_CURRENT_* values instead of collecting again"
         echo ""
         echo "Exit codes: 0 = stable, 1 = drift, 2 = no baseline or error"
         return 0
@@ -89,11 +96,30 @@ nbm_check() {
   baseline="$(cat "$NBM_SNAPSHOT_FILE")"
 
   # --- collect current state ---
-  local tmp_current
-  tmp_current="$(mktemp /tmp/nbm-check-XXXXXX.json)"
-  trap "rm -f '$tmp_current'" EXIT
-  nbm_snapshot_collect > "$tmp_current"
-  current="$(cat "$tmp_current")"
+  if [ "$use_current_env" = true ]; then
+    if [ "${NBM_CURRENT_STATE_READY:-}" != "1" ] ||
+       [ -z "${NBM_CURRENT_PUBLIC_IPV4+x}" ] ||
+       [ -z "${NBM_CURRENT_COUNTRY+x}" ] ||
+       [ -z "${NBM_CURRENT_ASN+x}" ] ||
+       [ -z "${NBM_CURRENT_DNS_RESOLVER+x}" ] ||
+       [ -z "${NBM_CURRENT_IPV6_AVAILABLE+x}" ]; then
+      if [ "$mode" = "json" ]; then
+        echo '{"status":"error","error":"current state environment incomplete"}'
+      else
+        echo "Current network state was not provided by the caller." >&2
+      fi
+      return 2
+    fi
+  else
+    local tmp_current
+    tmp_current="$(mktemp "${TMPDIR:-/tmp}/nbm-check.XXXXXX")" || {
+      echo "Failed to create temporary current-state file." >&2
+      return 2
+    }
+    trap "rm -f '$tmp_current'" EXIT
+    nbm_snapshot_collect > "$tmp_current"
+    current="$(cat "$tmp_current")"
+  fi
 
   # --- compare fields ---
   # Fields to compare: public_ipv4, country, asn, dns_resolver, ipv6_available
@@ -128,11 +154,19 @@ nbm_check() {
   b_dns="$(echo "$baseline" | _nbm_json_get_dns)"
   b_ipv6="$(echo "$baseline" | _nbm_json_get_bool "ipv6_available")"
 
-  c_ip="$(echo "$current" | _nbm_json_get "public_ipv4")"
-  c_country="$(echo "$current" | _nbm_json_get "country")"
-  c_asn="$(echo "$current" | _nbm_json_get "asn")"
-  c_dns="$(echo "$current" | _nbm_json_get_dns)"
-  c_ipv6="$(echo "$current" | _nbm_json_get_bool "ipv6_available")"
+  if [ "$use_current_env" = true ]; then
+    c_ip="${NBM_CURRENT_PUBLIC_IPV4:-null}"
+    c_country="${NBM_CURRENT_COUNTRY:-null}"
+    c_asn="${NBM_CURRENT_ASN:-null}"
+    c_dns="${NBM_CURRENT_DNS_RESOLVER:-[]}"
+    c_ipv6="${NBM_CURRENT_IPV6_AVAILABLE:-false}"
+  else
+    c_ip="$(echo "$current" | _nbm_json_get "public_ipv4")"
+    c_country="$(echo "$current" | _nbm_json_get "country")"
+    c_asn="$(echo "$current" | _nbm_json_get "asn")"
+    c_dns="$(echo "$current" | _nbm_json_get_dns)"
+    c_ipv6="$(echo "$current" | _nbm_json_get_bool "ipv6_available")"
+  fi
 
   _nbm_compare "public_ipv4"      "$b_ip"      "$c_ip"
   _nbm_compare "country"          "$b_country"  "$c_country"

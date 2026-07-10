@@ -74,7 +74,10 @@ nbm_trust() {
 
   # Write snapshot to a temp file to isolate I/O (avoids JSON leaking to stdout).
   local tmp_snapshot
-  tmp_snapshot="$(mktemp /tmp/nbm-trust-XXXXXX.json)"
+  tmp_snapshot="$(mktemp "${TMPDIR:-/tmp}/nbm-trust.XXXXXX")" || {
+    echo "Failed to create temporary baseline file." >&2
+    return 1
+  }
   trap "rm -f '$tmp_snapshot'" EXIT
   nbm_snapshot_collect > "$tmp_snapshot"
 

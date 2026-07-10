@@ -22,6 +22,15 @@ trim() {
   sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
+dns_list_to_json() {
+  local value="$1"
+  if [ -z "$value" ] || [ "$value" = "-" ]; then
+    echo "[]"
+    return
+  fi
+  printf '%s\n' "$value" | sed 's/[[:space:]]*,[[:space:]]*/","/g; s/^/["/; s/$/"]/'
+}
+
 first_nonempty() {
   local v
   for v in "$@"; do
@@ -494,6 +503,7 @@ public_city="-"
 public_country_code="-"
 public_flag="🏳️"
 public_org="-"
+public_asn="-"
 public_source="-"
 public_probe_summary="-"
 public_latency="-"
@@ -506,7 +516,7 @@ else
 fi
 
 probe_results=()
-probe_cache_key="$(printf '%s' "$public_lookup_proxy" | cksum | awk '{print $1}')"
+probe_cache_key="$(printf 'v2|%s' "$public_lookup_proxy" | cksum | awk '{print $1}')"
 probe_cache_file="$CACHE_DIR/public-probe.${probe_cache_key}.cache"
 probe_cache_fresh="no"
 if [ -f "$probe_cache_file" ]; then
@@ -522,17 +532,11 @@ if [ "$probe_cache_fresh" = "yes" ]; then
     fi
   done < "$probe_cache_file"
 else
-  for probe_result in "$(probe_myip "$public_lookup_proxy")" "$(probe_cloudflare "$public_lookup_proxy")"; do
+  for probe_result in "$(probe_myip "$public_lookup_proxy")" "$(probe_cloudflare "$public_lookup_proxy")" "$(probe_ipinfo "$public_lookup_proxy")"; do
     if [ -n "$probe_result" ]; then
       probe_results+=("$probe_result")
     fi
   done
-  if [ ${#probe_results[@]} -eq 0 ]; then
-    probe_result="$(probe_ipinfo "$public_lookup_proxy")"
-    if [ -n "$probe_result" ]; then
-      probe_results+=("$probe_result")
-    fi
-  fi
   if [ ${#probe_results[@]} -gt 0 ]; then
     printf '%s\n' "${probe_results[@]}" > "$probe_cache_file"
   fi
@@ -556,6 +560,17 @@ if [ ${#probe_results[@]} -gt 0 ]; then
   public_org="$(echo "$chosen_probe" | awk -F'|' '{print $4}')"
   public_source="$(echo "$chosen_probe" | awk -F'|' '{print $5}')"
   public_latency="$(echo "$chosen_probe" | awk -F'|' '{print $6}')"
+
+  if [ -z "$public_org" ] || [ "$public_org" = "-" ]; then
+    for probe_result in "${probe_results[@]}"; do
+      probe_ip="$(echo "$probe_result" | awk -F'|' '{print $1}')"
+      probe_org="$(echo "$probe_result" | awk -F'|' '{print $4}')"
+      if [ "$probe_ip" = "$public_ip" ] && [ -n "$probe_org" ] && [ "$probe_org" != "-" ]; then
+        public_org="$probe_org"
+        break
+      fi
+    done
+  fi
 
   if [ -z "$public_city" ] || [ "$public_city" = "-" ]; then
     for probe_result in "${probe_results[@]}"; do
@@ -603,6 +618,10 @@ else
 fi
 if [ -z "$public_org" ]; then
   public_org="-"
+fi
+public_asn="$(echo "$public_org" | sed -n 's/^\(AS[0-9][0-9]*\).*/\1/p')"
+if [ -z "$public_asn" ]; then
+  public_asn="-"
 fi
 if [ -z "$public_source" ]; then
   public_source="-"
@@ -708,6 +727,23 @@ elif [ "$proxy_label" != "none" ]; then
 fi
 
 # --- Network Baseline Monitor status --------------------------------
+nbm_current_ip="$public_ip"
+nbm_current_country="$public_country_code"
+nbm_current_asn="$public_asn"
+for field_name in nbm_current_ip nbm_current_country nbm_current_asn; do
+  if [ "${(P)field_name}" = "-" ] || [ -z "${(P)field_name}" ]; then
+    typeset "$field_name=null"
+  fi
+done
+nbm_current_dns="$(dns_list_to_json "$dns_servers")"
+nbm_current_ipv6="false"
+if ifconfig -l 2>/dev/null | tr ' ' '\n' | while read -r dev; do
+  [ -z "$dev" ] && continue
+  ifconfig "$dev" 2>/dev/null | grep -q 'inet6 .*[^f][^e]80:' && exit 0
+done; then
+  nbm_current_ipv6="true"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NBM_HELPER_DIR="${NBM_HELPER_DIR:-$SCRIPT_DIR/scripts}"
 if [ ! -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
@@ -717,7 +753,15 @@ baseline_label="⚪ 网络基线：功能不可用"
 baseline_detail=""
 baseline_action_label="🔐 设为当前可信基线"
 if [ -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
-  baseline_output="$(/bin/zsh "$NBM_HELPER_DIR/nbm-check.sh" --human 2>/dev/null)"
+  baseline_output="$(
+    NBM_CURRENT_STATE_READY=1 \
+    NBM_CURRENT_PUBLIC_IPV4="$nbm_current_ip" \
+    NBM_CURRENT_COUNTRY="$nbm_current_country" \
+    NBM_CURRENT_ASN="$nbm_current_asn" \
+    NBM_CURRENT_DNS_RESOLVER="$nbm_current_dns" \
+    NBM_CURRENT_IPV6_AVAILABLE="$nbm_current_ipv6" \
+      /bin/zsh "$NBM_HELPER_DIR/nbm-check.sh" --human --current-env 2>/dev/null
+  )"
   baseline_rc=$?
   case $baseline_rc in
     0)
