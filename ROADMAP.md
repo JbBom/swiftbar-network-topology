@@ -15,12 +15,12 @@
 - [x] Show AI readiness and running applications
 - [x] Record assessments during refresh
 - [x] Notify once when entering alert
-- [ ] Send a macOS notification on transitions into alert
-- [ ] Show recovery actions
+- [x] Send a macOS notification on transitions into alert
+- [x] Show recovery actions
 
 ### Phase 3: Preflight and Profiles
 
-- [ ] One-command preflight before launching an AI CLI
+- [x] One-command preflight before launching an AI CLI
 - [ ] Per-application trusted environment profiles
 - [ ] System timezone, locale and endpoint consistency
 - [ ] Browser consistency as a separate optional module

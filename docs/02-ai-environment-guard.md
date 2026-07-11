@@ -142,9 +142,13 @@ notification.
 
 ### Phase 3: Preflight
 
-- One-command readiness check before starting a CLI
+- One-command readiness check before starting a CLI: `aeg-preflight.sh`
 - Per-application trusted profiles
 - Clear recovery checklist
+
+`aeg-preflight.sh` is read-only. It delegates to the AEG assessment engine,
+returns the same `0 / 1 / 2` status contract, and does not launch, stop, or
+change any AI tool, network setting, or trusted baseline.
 
 ### Phase 4: System and Browser Consistency
 
