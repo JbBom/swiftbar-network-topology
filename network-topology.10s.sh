@@ -291,6 +291,21 @@ probe_ipinfo() {
   fi
 }
 
+probe_ipwho() {
+  local proxy="$1"
+  local expected_ip="$2"
+  local body ip city country asn org
+  body="$(fetch_url "$proxy" "https://ipwho.is/$expected_ip")"
+  ip="$(echo "$body" | sed -n 's/.*"ip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  city="$(echo "$body" | sed -n 's/.*"city"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  country="$(echo "$body" | sed -n 's/.*"country_code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  asn="$(echo "$body" | sed -n 's/.*"asn"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1 | trim)"
+  org="$(echo "$body" | sed -n 's/.*"org"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 | trim)"
+  if [ "$ip" = "$expected_ip" ] && [ -n "$asn" ]; then
+    echo "$ip|${country:-"-"}|${city:-"-"}|AS${asn} ${org:-unknown}|ipwho.is|-"
+  fi
+}
+
 probe_myip() {
   local proxy="$1"
   local body
@@ -572,6 +587,18 @@ if [ ${#probe_results[@]} -gt 0 ]; then
     done
   fi
 
+  # MyIP and Cloudflare provide the egress address but not ASN data. When
+  # ipinfo is unavailable, enrich that same address once per cache interval.
+  if { [ -z "$public_org" ] || [ "$public_org" = "-" ]; } && \
+     [ "$public_ip" != "-" ] && [ "$probe_cache_fresh" != "yes" ]; then
+    asn_probe="$(probe_ipwho "$public_lookup_proxy" "$public_ip")"
+    if [ -n "$asn_probe" ]; then
+      public_org="$(echo "$asn_probe" | awk -F'|' '{print $4}')"
+      probe_results+=("$asn_probe")
+      printf '%s\n' "${probe_results[@]}" > "$probe_cache_file"
+    fi
+  fi
+
   if [ -z "$public_city" ] || [ "$public_city" = "-" ]; then
     for probe_result in "${probe_results[@]}"; do
       probe_country="$(echo "$probe_result" | awk -F'|' '{print toupper($2)}')"
@@ -793,7 +820,16 @@ if [ -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
         -e 's/^  ipv6_available:/↳ IPv6:/p' | sed 's/ -> / → /g')"
       baseline_action_label="🔐 更新可信基线"
       ;;
-    2) baseline_label="⚪ 网络基线：未建立" ;;
+    2)
+      baseline_error="$(printf '%s' "$baseline_json" | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+      if [ "$baseline_error" = "no baseline found" ]; then
+        baseline_label="⚪ 网络基线：未建立"
+      elif [ "$baseline_error" = "current state environment incomplete" ]; then
+        baseline_label="⚪ 网络基线：当前信息不完整"
+      else
+        baseline_label="⚪ 网络基线：功能不可用"
+      fi
+      ;;
   esac
 fi
 

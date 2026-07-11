@@ -24,9 +24,9 @@ JSON
 
 run_shared_check() {
   NBM_CURRENT_STATE_READY=1 \
-  NBM_CURRENT_PUBLIC_IPV4="${NBM_TEST_IP:-203.0.113.10}" \
-  NBM_CURRENT_COUNTRY="US" \
-  NBM_CURRENT_ASN="AS64500" \
+    NBM_CURRENT_PUBLIC_IPV4="${NBM_TEST_IP:-203.0.113.10}" \
+    NBM_CURRENT_COUNTRY="US" \
+    NBM_CURRENT_ASN="${NBM_TEST_ASN:-AS64500}" \
   NBM_CURRENT_DNS_RESOLVER='["1.1.1.1","1.0.0.1"]' \
   NBM_CURRENT_IPV6_AVAILABLE="false" \
     "$ROOT_DIR/scripts/nbm-check.sh" --json --current-env
@@ -55,6 +55,14 @@ incomplete_rc=$?
 if [ "$incomplete_rc" -ne 2 ] ||
    [ "$incomplete_output" != '{"status":"error","error":"current state environment incomplete"}' ]; then
   echo "Expected incomplete-state error, got rc=$incomplete_rc: $incomplete_output" >&2
+  exit 1
+fi
+
+incomplete_asn_output="$(NBM_TEST_ASN=null run_shared_check)"
+incomplete_asn_rc=$?
+if [ "$incomplete_asn_rc" -ne 2 ] ||
+   ! echo "$incomplete_asn_output" | grep -q '"unavailable_fields":\["asn"\]'; then
+  echo "Expected incomplete ASN error, got rc=$incomplete_asn_rc: $incomplete_asn_output" >&2
   exit 1
 fi
 

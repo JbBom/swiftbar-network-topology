@@ -110,6 +110,23 @@ nbm_check() {
       fi
       return 2
     fi
+
+    local -a unavailable_fields
+    unavailable_fields=()
+    [ "$NBM_CURRENT_PUBLIC_IPV4" = "null" ] && unavailable_fields+=("public_ipv4")
+    [ "$NBM_CURRENT_COUNTRY" = "null" ] && unavailable_fields+=("country")
+    [ "$NBM_CURRENT_ASN" = "null" ] && unavailable_fields+=("asn")
+    if [ ${#unavailable_fields[@]} -gt 0 ]; then
+      if [ "$mode" = "json" ]; then
+        local unavailable_json
+        unavailable_json="$(printf '"%s",' "${unavailable_fields[@]}")"
+        unavailable_json="[${unavailable_json%,}]"
+        echo "{\"status\":\"error\",\"error\":\"current state environment incomplete\",\"unavailable_fields\":$unavailable_json}"
+      else
+        echo "Current network state is incomplete: ${unavailable_fields[*]}." >&2
+      fi
+      return 2
+    fi
   else
     local tmp_current
     tmp_current="$(mktemp "${TMPDIR:-/tmp}/nbm-check.XXXXXX")" || {
