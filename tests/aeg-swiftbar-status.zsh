@@ -20,4 +20,9 @@ if ! printf '%s\n' "$PLUGIN_OUTPUT" | grep -Eq '^(🟢 AI 环境：可以运行|
   exit 1
 fi
 
+if ! printf '%s\n' "$PLUGIN_OUTPUT" | grep -Eq '^(🟢 系统一致性：稳定|🟡 系统一致性：发生变化|⚪ 系统一致性：(未建立|功能不可用))$'; then
+  echo "SwiftBar did not render a valid system consistency state." >&2
+  exit 1
+fi
+
 echo "aeg SwiftBar status checks passed"
