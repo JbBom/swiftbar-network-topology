@@ -152,9 +152,14 @@ change any AI tool, network setting, or trusted baseline.
 
 ### Phase 4: System and Browser Consistency
 
-- Timezone, locale, language, endpoint and proxy consistency
+- System baseline: macOS version, architecture, timezone, locale, primary
+  interface and system-proxy state
 - Browser-visible checks remain a separate module
 - Weak correlation signals are displayed as facts, not converted into a ban-risk score
+
+`aeg-system.sh` owns the system baseline. Its v0.1 output is intentionally
+separate from AEG readiness so users can observe system changes before deciding
+which ones should affect alert severity.
 
 ## Safety Boundaries
 

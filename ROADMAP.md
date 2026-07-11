@@ -22,7 +22,7 @@
 
 - [x] One-command preflight before launching an AI CLI
 - [ ] Per-application trusted environment profiles
-- [ ] System timezone, locale and endpoint consistency
+- [x] System consistency baseline: macOS, timezone, locale, interface, proxy
 - [ ] Browser consistency as a separate optional module
 
 ## SwiftBar Plugin
