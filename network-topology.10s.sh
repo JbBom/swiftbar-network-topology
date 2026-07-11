@@ -784,6 +784,8 @@ aeg_status="unavailable"
 aeg_running_apps=""
 aeg_reason=""
 aeg_action=""
+system_label="⚪ 系统一致性：功能不可用"
+system_detail=""
 baseline_json='{"status":"error","error":"baseline check unavailable"}'
 if [ -f "$NBM_HELPER_DIR/nbm-check.sh" ]; then
   baseline_json="$(
@@ -852,6 +854,30 @@ if [ -f "$NBM_HELPER_DIR/aeg-assess.sh" ]; then
   esac
 fi
 
+if [ -f "$NBM_HELPER_DIR/aeg-system.sh" ]; then
+  system_output="$(/bin/zsh "$NBM_HELPER_DIR/aeg-system.sh" check --json 2>/dev/null)"
+  system_rc=$?
+  case "$system_rc" in
+    0) system_label="🟢 系统一致性：稳定" ;;
+    1)
+      system_label="🟡 系统一致性：发生变化"
+      system_detail="$(/bin/zsh "$NBM_HELPER_DIR/aeg-system.sh" check --human 2>/dev/null | sed -n \
+        -e 's/^  os_version:/↳ macOS:/p' \
+        -e 's/^  architecture:/↳ 架构:/p' \
+        -e 's/^  timezone:/↳ 时区:/p' \
+        -e 's/^  locale:/↳ 语言地区:/p' \
+        -e 's/^  primary_interface:/↳ 默认网卡:/p' \
+        -e 's/^  system_proxy_enabled:/↳ 系统代理:/p' | sed 's/ -> / → /g')"
+      ;;
+    2)
+      system_error="$(printf '%s' "$system_output" | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+      if [ "$system_error" = "no system baseline found" ]; then
+        system_label="⚪ 系统一致性：未建立"
+      fi
+      ;;
+  esac
+fi
+
 menubar_status_icon="⚪"
 case "$aeg_status" in
   ready) menubar_status_icon="🟢" ;;
@@ -871,6 +897,10 @@ fi
 if [ "$aeg_status" = "caution" ] || [ "$aeg_status" = "alert" ] || [ "$aeg_status" = "unknown" ]; then
   [ -n "$aeg_reason" ] && echo "↳ 原因：$aeg_reason"
   [ -n "$aeg_action" ] && echo "↳ 建议：$aeg_action"
+fi
+echo "$system_label"
+if [ -n "$system_detail" ]; then
+  printf '%s\n' "$system_detail"
 fi
 echo "---"
 echo "$baseline_label"

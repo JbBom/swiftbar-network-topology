@@ -31,6 +31,7 @@
 - Add cached public IP and latency checks to reduce menu refresh delay.
 - [x] Add a command-line diagnostic report output.
 - [ ] Add a one-click diagnostic report action in SwiftBar.
+- [x] Show system consistency state in SwiftBar.
 - Improve app detection for more VPN and proxy clients.
 
 ## Desktop Monitor
