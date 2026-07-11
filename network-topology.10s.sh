@@ -816,6 +816,14 @@ if [ -f "$NBM_HELPER_DIR/aeg-assess.sh" ]; then
   esac
 fi
 
+menubar_status_icon="⚪"
+case "$aeg_status" in
+  ready) menubar_status_icon="🟢" ;;
+  caution) menubar_status_icon="🟡" ;;
+  alert) menubar_status_icon="🚨" ;;
+esac
+status_line="${menubar_status_icon}${status_line}"
+
 echo "$status_line"
 echo "---"
 echo "$aeg_label"
