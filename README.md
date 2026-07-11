@@ -152,6 +152,17 @@ and recent state changes:
 ~/.nbm/bin/aeg-report.sh
 ```
 
+Create and check a separate system-consistency baseline:
+
+```sh
+~/.nbm/bin/aeg-system.sh trust
+~/.nbm/bin/aeg-system.sh check
+```
+
+It tracks macOS version, architecture, timezone, locale, primary network
+interface, and whether a system proxy is enabled. This is an independent local
+check in v0.1; it does not yet change the AEG readiness state automatically.
+
 The initial profiles cover ChatGPT desktop, Codex desktop/CLI, Claude Code and
 Gemini CLI. The assessment states are:
 
