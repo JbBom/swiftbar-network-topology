@@ -135,6 +135,16 @@ Record only state changes to history:
 ~/.nbm/bin/aeg-assess.sh --record
 ```
 
+Before starting an AI CLI, run the read-only preflight check:
+
+```sh
+~/.nbm/bin/aeg-preflight.sh
+```
+
+Exit code `0` means the environment is ready. `1` means confirmation or repair
+is needed before launch. `2` means an AI process is active while the environment
+is in alert state. The command does not start, stop, or modify any AI tool.
+
 The initial profiles cover ChatGPT desktop, Codex desktop/CLI, Claude Code and
 Gemini CLI. The assessment states are:
 
