@@ -29,6 +29,17 @@ _nbm_fetch_url() {
   curl --connect-timeout 3 -L -m 5 -s "$url" 2>/dev/null
 }
 
+_nbm_ipwho_asn() {
+  local public_ip="$1"
+  local body asn org
+  body="$(_nbm_fetch_url "https://ipwho.is/$public_ip")"
+  asn="$(echo "$body" | sed -n 's/.*"asn"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1 | _nbm_trim)"
+  org="$(echo "$body" | sed -n 's/.*"org"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | _nbm_trim)"
+  if [ -n "$asn" ]; then
+    printf 'AS%s %s\n' "$asn" "${org:-unknown}"
+  fi
+}
+
 # ---- data collection ---------------------------------------------------
 
 nbm_snapshot_collect() {
@@ -65,6 +76,18 @@ nbm_snapshot_collect() {
       public_ipv4="${public_ipv4:-$(echo "$myip" | sed -n 's/.*"ip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | _nbm_trim)}"
       country="${country:-$(echo "$myip" | sed -n 's/.*"cc"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | _nbm_trim)}"
       source="myip.com"
+    fi
+  fi
+
+  # A public-IP service may provide address and country without ASN data.
+  # Enrich the same observed address so a temporary provider limit does not
+  # turn an unavailable ASN into a misleading drift result.
+  if [ -n "$public_ipv4" ] && [ -z "$asn" ]; then
+    local fallback_isp
+    fallback_isp="$(_nbm_ipwho_asn "$public_ipv4")"
+    if [ -n "$fallback_isp" ]; then
+      isp="$fallback_isp"
+      asn="$(echo "$fallback_isp" | sed -n 's/^\(AS[0-9][0-9]*\).*/\1/p' | _nbm_trim)"
     fi
   fi
 

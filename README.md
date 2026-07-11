@@ -145,6 +145,13 @@ Exit code `0` means the environment is ready. `1` means confirmation or repair
 is needed before launch. `2` means an AI process is active while the environment
 is in alert state. The command does not start, stop, or modify any AI tool.
 
+Create a local diagnostic report with the current assessment, trusted baseline,
+and recent state changes:
+
+```sh
+~/.nbm/bin/aeg-report.sh
+```
+
 The initial profiles cover ChatGPT desktop, Codex desktop/CLI, Claude Code and
 Gemini CLI. The assessment states are:
 
