@@ -9,6 +9,7 @@ AEG_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 : "${AEG_LAST_STATE_FILE:=$AEG_STATE_DIR/aeg-last-state}"
 : "${AEG_LAST_ALERT_STATUS_FILE:=$AEG_STATE_DIR/aeg-last-alert-status}"
 : "${AEG_HISTORY_MAX_ENTRIES:=500}"
+: "${AEG_REPORT_DIR:=$AEG_STATE_DIR/reports}"
 : "${AEG_PROFILES_FILE:=$AEG_SCRIPT_DIR/../config/ai-apps.tsv}"
 
 aeg_now_utc() {

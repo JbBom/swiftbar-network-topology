@@ -152,6 +152,9 @@ and recent state changes:
 ~/.nbm/bin/aeg-report.sh
 ```
 
+In SwiftBar, choose `📄 导出环境诊断报告` to save the same report as a
+timestamped local text file under `~/.nbm/reports/`.
+
 Create and check a separate system-consistency baseline:
 
 ```sh

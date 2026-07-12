@@ -902,6 +902,9 @@ echo "$system_label"
 if [ -n "$system_detail" ]; then
   printf '%s\n' "$system_detail"
 fi
+if [ -f "$NBM_HELPER_DIR/aeg-report-export.sh" ]; then
+  echo "📄 导出环境诊断报告 | bash=\"/bin/zsh\" param1=\"$NBM_HELPER_DIR/aeg-report-export.sh\" terminal=true refresh=true"
+fi
 echo "---"
 echo "$baseline_label"
 if [ -n "$baseline_detail" ]; then
