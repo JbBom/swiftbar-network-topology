@@ -25,4 +25,9 @@ if ! printf '%s\n' "$PLUGIN_OUTPUT" | grep -Eq '^(🟢 系统一致性：稳定|
   exit 1
 fi
 
+if ! printf '%s\n' "$PLUGIN_OUTPUT" | grep -q '^📄 导出环境诊断报告 | '; then
+  echo "SwiftBar diagnostic export action is missing." >&2
+  exit 1
+fi
+
 echo "aeg SwiftBar status checks passed"
